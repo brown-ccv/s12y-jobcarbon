@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-import argparse
-import datetime
+from argparse import ArgumentParser
+from datetime import datetime
+from typing import Any
+
 import requests
 import yaml
 
@@ -10,7 +12,7 @@ QUERY_ENDPOINT = f"{PROMETHEUS_SERVER}/query"
 STEP_SECONDS = 60
 
 
-def get_overall_metric(resp):
+def get_overall_metric(resp: dict[Any, Any]) -> dict[Any, Any]:
     results = resp["data"]["result"]
     name = None
     overall = {}
@@ -27,37 +29,39 @@ def get_overall_metric(resp):
     return overall
 
 
-def get_metric_name(result):
+def get_metric_name(result: dict[Any, Any]) -> str:
     metric = result["metric"]
     name = metric["__name__"]
 
-    if name == 'cgroup_cpu_system_seconds':
-        return 'cpu/system-seconds'
-    elif name == 'cgroup_cpu_total_seconds':
-        return 'cpu/total-seconds'
-    elif name == 'cgroup_cpu_user_seconds':
-        return 'cpu/user-seconds'
+    if name == "cgroup_cpu_system_seconds":
+        return "cpu/system-seconds"
+    elif name == "cgroup_cpu_total_seconds":
+        return "cpu/total-seconds"
+    elif name == "cgroup_cpu_user_seconds":
+        return "cpu/user-seconds"
 
-    raise Exception(f'unsupported metric found {name}')
+    raise Exception(f"unsupported metric found {name}")
 
 
-def get_node_name(result):
+def get_node_name(result: dict[Any, Any]) -> str:
     metric = result["metric"]
     instance = metric["instance"]
     return instance.split(":")[0]
 
 
-def get_job_id(result):
+def get_job_id(result: dict[Any, Any]) -> str:
     metric = list(result.values())[0]["metric"]
     return metric["jobid"]
 
 
-def get_metric_data(result):
-    retyped_results = list(map(lambda x: [x[0], float(x[1])], result["values"]))
+def get_metric_data(result: dict[Any, Any]) -> list[tuple[str, float]]:
+    retyped_results = list(map(lambda x: (str(x[0]), float(x[1])), result["values"]))
     return retyped_results
 
 
-def zipper_metric_data(a, b, c):
+def zipper_metric_data(
+    a: dict[Any, Any], b: dict[Any, Any], c: dict[Any, Any]
+) -> list[dict[Any, Any]]:
     output = []
     for key in a.keys():
         a_overall = a[key]
@@ -99,7 +103,9 @@ def zipper_metric_data(a, b, c):
     return output
 
 
-def parse_responses(a, b, c):
+def parse_responses(
+    a: dict[Any, Any], b: dict[Any, Any], c: dict[Any, Any]
+) -> dict[Any, Any]:
     a_overall = get_overall_metric(a)
     b_overall = get_overall_metric(b)
     c_overall = get_overall_metric(c)
@@ -111,42 +117,42 @@ def parse_responses(a, b, c):
     return {"tree": {"children": {f"job{job_id}": {"inputs": inputs}}}}
 
 
-def system_cpu_seconds(jobid, start, end):
+def system_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, Any]:
     query = f"cgroup_cpu_system_seconds{{cluster='oscar',jobid='{jobid}'}}"
     r = requests.get(
         QUERY_RANGE_ENDPOINT,
         {
             "query": query,
-            "start": start,
-            "end": end,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
             "step": f"{STEP_SECONDS}s",
         },
     )
     return r.json()
 
 
-def total_cpu_seconds(jobid, start, end):
+def total_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, Any]:
     query = f"cgroup_cpu_total_seconds{{cluster='oscar',jobid='{jobid}'}}"
     r = requests.get(
         QUERY_RANGE_ENDPOINT,
         {
             "query": query,
-            "start": start,
-            "end": end,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
             "step": f"{STEP_SECONDS}s",
         },
     )
     return r.json()
 
 
-def user_cpu_seconds(jobid, start, end):
+def user_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, Any]:
     query = f"cgroup_cpu_user_seconds{{cluster='oscar',jobid='{jobid}'}}"
     r = requests.get(
         QUERY_RANGE_ENDPOINT,
         {
             "query": query,
-            "start": start,
-            "end": end,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
             "step": f"{STEP_SECONDS}s",
         },
     )
@@ -154,18 +160,23 @@ def user_cpu_seconds(jobid, start, end):
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
         description="generate observations for impact framework manifest"
     )
     parser.add_argument("jobid", help="job id to analyze")
-    parser.add_argument("start", help="start time for job", type=str)
-    parser.add_argument("end", help="end time for job", type=str)
+    parser.add_argument("start", help="start time for job", type=datetime.fromisoformat)
+    parser.add_argument("end", help="end time for job", type=datetime.fromisoformat)
     args = parser.parse_args()
-    start_date = datetime.datetime.strptime(args.start, "%Y-%m-%dT%H:%M:%S").timestamp()
-    end_date = datetime.datetime.strptime(args.end, "%Y-%m-%dT%H:%M:%S").timestamp()
-    cpu_total_resp = total_cpu_seconds(args.jobid, start_date, end_date)
-    cpu_user_resp = user_cpu_seconds(args.jobid, start_date, end_date)
-    cpu_system_resp = system_cpu_seconds(args.jobid, start_date, end_date)
+
+    # TODO(@broarr): validate types here
+    # NOTE(@broarr): We check to see if the job id is valid because we're using it
+    #   directly in a prometheus query. There's no 'bind' like in a relational database
+    #   handler. We need to be careful to prevent injection attacks
+
+    cpu_total_resp = total_cpu_seconds(args.jobid, args.start, args.end)
+    cpu_user_resp = user_cpu_seconds(args.jobid, args.start, args.end)
+    cpu_system_resp = system_cpu_seconds(args.jobid, args.start, args.end)
+
     print(yaml.dump(parse_responses(cpu_system_resp, cpu_total_resp, cpu_user_resp)))
 
 
