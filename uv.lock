@@ -57,11 +57,10 @@ wheels = [
 [[package]]
 name = "jobcarbon"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "pyyaml" },
     { name = "requests" },
-    { name = "ruff" },
 ]
 
 [package.dev-dependencies]
@@ -73,7 +72,6 @@ dev = [
 requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "requests", specifier = ">=2.32.3" },
-    { name = "ruff", specifier = ">=0.9.4" },
 ]
 
 [package.metadata.requires-dev]
