@@ -81,7 +81,7 @@ def build_yaml_for_job(job, outputdir: str):
     end = job[2]
     cores = job[3]
     memory = job[4]
-    print(job_id, end="\t")
+    print(job_id, end="... ")
     try:
         cpu_total_resp = total_cpu_seconds(job_id, start, end)
         cpu_user_resp = user_cpu_seconds(job_id, start, end)
@@ -90,9 +90,9 @@ def build_yaml_for_job(job, outputdir: str):
         job_yaml = job_yaml_template(job_id, memory, cores, inputs)
         with open(os.path.join(outputdir, f"{job_id}.yml"), "w") as yml_file:
             yml_file.write(yaml.dump(job_yaml))
-        print("Finished writing yaml for", job_id)
+        print("✅")
     except Exception as e:
-        print("Error creating yaml for id", job_id)
+        print("💀")
         print(e)
 
 
@@ -112,9 +112,7 @@ def main():
     os.mkdir(args.outputdir)
 
     for job in jobs:
-        print(job, "🔄")
         build_yaml_for_job(job, args.outputdir)
-        print(job[0], "✅")
 
 
 if __name__ == "__main__":
