@@ -6,7 +6,8 @@ from typing import Any
 import requests
 import yaml
 
-PROMETHEUS_SERVER = "http://slurm02:9390/api/v1"
+# PROMETHEUS_SERVER = "http://slurm02:9390/api/v1"
+PROMETHEUS_SERVER = "http://localhost:9390/api/v1"
 QUERY_RANGE_ENDPOINT = f"{PROMETHEUS_SERVER}/query_range"
 QUERY_ENDPOINT = f"{PROMETHEUS_SERVER}/query"
 STEP_SECONDS = 60
@@ -99,7 +100,6 @@ def zipper_metric_data(
                                 "duration": STEP_SECONDS / 60,
                             }
                         )
-
     return output
 
 
@@ -123,8 +123,8 @@ def system_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, 
         QUERY_RANGE_ENDPOINT,
         {
             "query": query,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
+            "start": start,
+            "end": end,
             "step": f"{STEP_SECONDS}s",
         },
     )
@@ -137,8 +137,8 @@ def total_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, A
         QUERY_RANGE_ENDPOINT,
         {
             "query": query,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
+            "start": start,
+            "end": end,
             "step": f"{STEP_SECONDS}s",
         },
     )
@@ -151,8 +151,8 @@ def user_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, An
         QUERY_RANGE_ENDPOINT,
         {
             "query": query,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
+            "start": start,
+            "end": end,
             "step": f"{STEP_SECONDS}s",
         },
     )
@@ -164,8 +164,8 @@ def main():
         description="generate observations for impact framework manifest"
     )
     parser.add_argument("jobid", help="job id to analyze")
-    parser.add_argument("start", help="start time for job", type=datetime.fromisoformat)
-    parser.add_argument("end", help="end time for job", type=datetime.fromisoformat)
+    parser.add_argument("start", help="start time for job")
+    parser.add_argument("end", help="end time for job")
     args = parser.parse_args()
 
     # TODO(@broarr): validate types here
