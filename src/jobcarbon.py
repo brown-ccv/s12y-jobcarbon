@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 from datetime import datetime
 from typing import Any
 
+import pandas as pd
 import requests
 import yaml
 
@@ -55,9 +56,9 @@ def get_job_id(result: dict[Any, Any]) -> str:
     return metric["jobid"]
 
 
-def get_metric_data(result: dict[Any, Any]) -> list[tuple[str, float]]:
-    retyped_results = list(map(lambda x: (str(x[0]), float(x[1])), result["values"]))
-    return retyped_results
+def get_metric_data(result: dict[Any, Any], metric_name: str):
+    retyped_results = list(map(lambda x: (int(x[0]), float(x[1])), result["values"]))
+    return pd.DataFrame(retyped_results, columns=["timestamp", metric_name])
 
 
 def zipper_metric_data(
@@ -79,27 +80,16 @@ def zipper_metric_data(
         b_node = get_node_name(b_overall)
         c_node = get_node_name(c_overall)
 
-        a_values = get_metric_data(a_overall)
-        b_values = get_metric_data(b_overall)
-        c_values = get_metric_data(c_overall)
+        a_df = get_metric_data(a_overall, a_name)
+        b_df = get_metric_data(b_overall, b_name)
+        c_df = get_metric_data(c_overall, c_name)
 
-        for [a_timestamp, a_value] in a_values:
-            for [b_timestamp, b_value] in b_values:
-                for [c_timestamp, c_value] in c_values:
-                    if (
-                        a_timestamp == b_timestamp == c_timestamp
-                        and a_node == b_node == c_node
-                    ):
-                        output.append(
-                            {
-                                "timestamp": a_timestamp,
-                                a_name: a_value,
-                                b_name: b_value,
-                                c_name: c_value,
-                                "node": a_node,
-                                "duration": STEP_SECONDS / 60,
-                            }
-                        )
+        all_observations = a_df.merge(
+            b_df, left_on="timestamp", right_on="timestamp", how="inner"
+        ).merge(c_df, left_on="timestamp", right_on="timestamp", how="inner")
+        all_observations["node"] = a_node
+        all_observations["duration"] = STEP_SECONDS / 60
+        output.extend(all_observations.to_dict("records"))
     return output
 
 

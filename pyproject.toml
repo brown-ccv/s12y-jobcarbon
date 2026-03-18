@@ -5,6 +5,7 @@ description = "generate Impact Framework observations from OSCAR jobs"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "pandas>=3.0.1",
     "pyyaml>=6.0.2",
     "requests>=2.32.3",
 ]

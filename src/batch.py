@@ -119,8 +119,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# cpu_total_resp = total_cpu_seconds(args.jobid, args.start, args.end)
-# cpu_user_resp = user_cpu_seconds(args.jobid, args.start, args.end)
-# cpu_system_resp = system_cpu_seconds(args.jobid, args.start, args.end)
-# print(yaml.dump(parse_responses(cpu_system_resp, cpu_total_resp, cpu_user_resp)))
