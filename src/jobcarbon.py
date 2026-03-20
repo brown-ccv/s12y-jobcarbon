@@ -5,10 +5,16 @@ from typing import Any
 
 import pandas as pd
 import requests
-import yaml
 
-# PROMETHEUS_SERVER = "http://slurm02:9390/api/v1"
-PROMETHEUS_SERVER = "http://localhost:9390/api/v1"
+from yamldump import dump
+
+
+USE_LOCAL_PROMETHEUS = True
+PROMETHEUS_SERVER_SLURM = "http://slurm02:9390/api/v1"
+PROMETHEUS_SERVER_LOCAL = "http://localhost:9390/api/v1"
+PROMETHEUS_SERVER = (
+    PROMETHEUS_SERVER_LOCAL if USE_LOCAL_PROMETHEUS else PROMETHEUS_SERVER_SLURM
+)
 QUERY_RANGE_ENDPOINT = f"{PROMETHEUS_SERVER}/query_range"
 QUERY_ENDPOINT = f"{PROMETHEUS_SERVER}/query"
 STEP_SECONDS = 60
@@ -57,7 +63,7 @@ def get_job_id(result: dict[Any, Any]) -> str:
 
 
 def get_metric_data(result: dict[Any, Any], metric_name: str):
-    retyped_results = list(map(lambda x: (int(x[0]), float(x[1])), result["values"]))
+    retyped_results = list(map(lambda x: (str(x[0]), float(x[1])), result["values"]))
     return pd.DataFrame(retyped_results, columns=["timestamp", metric_name])
 
 
@@ -88,7 +94,7 @@ def zipper_metric_data(
             b_df, left_on="timestamp", right_on="timestamp", how="inner"
         ).merge(c_df, left_on="timestamp", right_on="timestamp", how="inner")
         all_observations["node"] = a_node
-        all_observations["duration"] = STEP_SECONDS / 60
+        all_observations["duration"] = int(STEP_SECONDS / 60)
         output.extend(all_observations.to_dict("records"))
     return output
 
@@ -104,7 +110,7 @@ def parse_responses(
 
     inputs = zipper_metric_data(a_overall, b_overall, c_overall)
 
-    return {"tree": {"children": {f"job{job_id}": {"inputs": inputs}}}}
+    return inputs
 
 
 def system_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, Any]:
@@ -167,7 +173,21 @@ def main():
     cpu_user_resp = user_cpu_seconds(args.jobid, args.start, args.end)
     cpu_system_resp = system_cpu_seconds(args.jobid, args.start, args.end)
 
-    print(yaml.dump(parse_responses(cpu_system_resp, cpu_total_resp, cpu_user_resp)))
+    print(
+        dump(
+            {
+                "tree": {
+                    "children": {
+                        f"job{job_id}": {
+                            "inputs": parse_responses(
+                                cpu_system_resp, cpu_total_resp, cpu_user_resp
+                            )
+                        }
+                    }
+                }
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

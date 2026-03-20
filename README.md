@@ -59,3 +59,11 @@ tree:
 ```
 
 The output of `jobcarbon` is `yaml` that can be used as observations in an Impact Framework manifest file
+
+## `batch.py`
+
+Accompanying this is a python script that will generate entire manifests for the impact framework. This requires a .tsv file that contains: Job ID, Start and End times, and Slurm alloation.
+
+To create this TSV, you can use the script `generate-recent-jobs-query.js` in the [Slurm Account](https://github.com/brown-ccv/s12y-slurm-accounting) repository, and then export the result as a TSV.
+
+When executed, this script will create one manifest file for each line in the TSV in a specified output directory.
