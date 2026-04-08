@@ -3,10 +3,18 @@ from argparse import ArgumentParser
 from datetime import datetime
 from typing import Any
 
+import pandas as pd
 import requests
-import yaml
 
-PROMETHEUS_SERVER = "http://slurm02:9390/api/v1"
+from yamldump import dump
+
+
+USE_LOCAL_PROMETHEUS = True
+PROMETHEUS_SERVER_SLURM = "http://slurm02:9390/api/v1"
+PROMETHEUS_SERVER_LOCAL = "http://localhost:9390/api/v1"
+PROMETHEUS_SERVER = (
+    PROMETHEUS_SERVER_LOCAL if USE_LOCAL_PROMETHEUS else PROMETHEUS_SERVER_SLURM
+)
 QUERY_RANGE_ENDPOINT = f"{PROMETHEUS_SERVER}/query_range"
 QUERY_ENDPOINT = f"{PROMETHEUS_SERVER}/query"
 STEP_SECONDS = 60
@@ -54,9 +62,9 @@ def get_job_id(result: dict[Any, Any]) -> str:
     return metric["jobid"]
 
 
-def get_metric_data(result: dict[Any, Any]) -> list[tuple[str, float]]:
+def get_metric_data(result: dict[Any, Any], metric_name: str):
     retyped_results = list(map(lambda x: (str(x[0]), float(x[1])), result["values"]))
-    return retyped_results
+    return pd.DataFrame(retyped_results, columns=["timestamp", metric_name])
 
 
 def zipper_metric_data(
@@ -78,28 +86,16 @@ def zipper_metric_data(
         b_node = get_node_name(b_overall)
         c_node = get_node_name(c_overall)
 
-        a_values = get_metric_data(a_overall)
-        b_values = get_metric_data(b_overall)
-        c_values = get_metric_data(c_overall)
+        a_df = get_metric_data(a_overall, a_name)
+        b_df = get_metric_data(b_overall, b_name)
+        c_df = get_metric_data(c_overall, c_name)
 
-        for [a_timestamp, a_value] in a_values:
-            for [b_timestamp, b_value] in b_values:
-                for [c_timestamp, c_value] in c_values:
-                    if (
-                        a_timestamp == b_timestamp == c_timestamp
-                        and a_node == b_node == c_node
-                    ):
-                        output.append(
-                            {
-                                "timestamp": a_timestamp,
-                                a_name: a_value,
-                                b_name: b_value,
-                                c_name: c_value,
-                                "node": a_node,
-                                "duration": STEP_SECONDS / 60,
-                            }
-                        )
-
+        all_observations = a_df.merge(
+            b_df, left_on="timestamp", right_on="timestamp", how="inner"
+        ).merge(c_df, left_on="timestamp", right_on="timestamp", how="inner")
+        all_observations["node"] = a_node
+        all_observations["duration"] = int(STEP_SECONDS / 60)
+        output.extend(all_observations.to_dict("records"))
     return output
 
 
@@ -114,7 +110,7 @@ def parse_responses(
 
     inputs = zipper_metric_data(a_overall, b_overall, c_overall)
 
-    return {"tree": {"children": {f"job{job_id}": {"inputs": inputs}}}}
+    return inputs
 
 
 def system_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, Any]:
@@ -123,8 +119,8 @@ def system_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, 
         QUERY_RANGE_ENDPOINT,
         {
             "query": query,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
+            "start": start,
+            "end": end,
             "step": f"{STEP_SECONDS}s",
         },
     )
@@ -137,8 +133,8 @@ def total_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, A
         QUERY_RANGE_ENDPOINT,
         {
             "query": query,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
+            "start": start,
+            "end": end,
             "step": f"{STEP_SECONDS}s",
         },
     )
@@ -151,8 +147,8 @@ def user_cpu_seconds(jobid: str, start: datetime, end: datetime) -> dict[Any, An
         QUERY_RANGE_ENDPOINT,
         {
             "query": query,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
+            "start": start,
+            "end": end,
             "step": f"{STEP_SECONDS}s",
         },
     )
@@ -164,8 +160,8 @@ def main():
         description="generate observations for impact framework manifest"
     )
     parser.add_argument("jobid", help="job id to analyze")
-    parser.add_argument("start", help="start time for job", type=datetime.fromisoformat)
-    parser.add_argument("end", help="end time for job", type=datetime.fromisoformat)
+    parser.add_argument("start", help="start time for job")
+    parser.add_argument("end", help="end time for job")
     args = parser.parse_args()
 
     # TODO(@broarr): validate types here
@@ -177,7 +173,21 @@ def main():
     cpu_user_resp = user_cpu_seconds(args.jobid, args.start, args.end)
     cpu_system_resp = system_cpu_seconds(args.jobid, args.start, args.end)
 
-    print(yaml.dump(parse_responses(cpu_system_resp, cpu_total_resp, cpu_user_resp)))
+    print(
+        dump(
+            {
+                "tree": {
+                    "children": {
+                        f"job{job_id}": {
+                            "inputs": parse_responses(
+                                cpu_system_resp, cpu_total_resp, cpu_user_resp
+                            )
+                        }
+                    }
+                }
+            }
+        )
+    )
 
 
 if __name__ == "__main__":
