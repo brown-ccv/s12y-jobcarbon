@@ -31,19 +31,23 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         query="nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}}",
         unit="milliwatts",
     ),
-    "node_cpu_cap": MetricDefinition(
-        id="node_cpu_cap",
+    "node_cpu_total": MetricDefinition(
+        id="node_cpu_total",
         query="slurm_node_cpu_total{{node='{node}'}}",
         unit="cores",
     ),
-    "node_mem_cap": MetricDefinition(
-        id="node_mem_cap",
+    "node_mem_total": MetricDefinition(
+        id="node_mem_total",
         query="slurm_node_mem_total{{node='{node}'}}",
         unit="megabytes",
     ),
-    # Queried without a node filter to discover all nodes for a job and derive
-    # the time window. Node names and timestamps are extracted from top-level
-    # rows only (no step, no task), but all rows are forwarded to the zipper.
+    # engine.query() only — no instance filter, bakes step/task filters in to return
+    # one series per node. Used to discover nodes and derive the job window.
+    "job_cgroup": MetricDefinition(
+        id="job_cgroup",
+        query="cgroup_cpu_total_seconds{{jobid='{jobid}',step='',task=''}}",
+        unit="seconds",
+    ),
     "cgroup_window": MetricDefinition(
         id="cgroup_window",
         query="cgroup_cpu_total_seconds{{instance=~'{node}:.*',jobid='{jobid}'}}",
@@ -58,8 +62,9 @@ class NodeProfile(Enum):
 
 
 # gpu_power is in both profiles — an empty result means no GPUs on this job/node.
-# dram_power is fetched during discovery and reused for FULL, not re-fetched.
+# dram_power is fetched during profile detection and reused for FULL, not re-fetched.
+# node_cpu_total and node_mem_total are fetched separately and stored as scalars on NodeData.
 PROFILE_METRICS: dict[NodeProfile, list[str]] = {
-    NodeProfile.FULL:      ["cpu_power", "dram_power", "gpu_power", "node_cpu_cap", "node_mem_cap"],
-    NodeProfile.HOST_ONLY: ["host_power", "gpu_power", "node_cpu_cap", "node_mem_cap"],
+    NodeProfile.FULL:      ["cpu_power", "dram_power", "gpu_power"],
+    NodeProfile.HOST_ONLY: ["host_power", "gpu_power"],
 }
