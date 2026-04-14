@@ -5,6 +5,7 @@ import requests
 
 from registry import MetricDefinition
 
+PROMETHEUS_URL = os.environ.get("JOBCARBON_PROMETHEUS_URL", "http://localhost:9390")
 STEP_SECONDS = int(os.environ.get("JOBCARBON_STEP_SECONDS", 60))
 LOOKBACK_DAYS = int(os.environ.get("JOBCARBON_LOOKBACK_DAYS", 30))
 

@@ -20,3 +20,4 @@ dev = [
 
 [project.scripts]
 jobcarbon = "jobcarbon:main"
+batch = "batch:main"
