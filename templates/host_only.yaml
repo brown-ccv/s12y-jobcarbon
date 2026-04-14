@@ -1,0 +1,174 @@
+name: ~
+description: ~
+aggregation:
+  metrics:
+    - duration
+    - energy
+    - carbon_operational
+    - carbon_embodied
+    - carbon
+    - sci
+  type: both
+pipeline:
+  compute:
+    - host-microwatts-to-watts
+    - cpu-share
+    - mem-share
+    - weight-cpu-share
+    - weight-mem-share
+    - reservation-share
+    - scale-host-power
+    - duration-to-hours
+    - watts-to-kw
+    - calculate-energy
+    - sci-o
+    - mem-bytes-to-gb
+    - sci-m
+    - sum-carbon
+    - sci
+initialize:
+  plugins:
+    host-microwatts-to-watts:
+      path: builtin
+      method: Coefficient
+      config:
+        input-parameter: host_power
+        coefficient: "=1/1000000"
+        output-parameter: host_power_watts
+
+    cpu-share:
+      path: builtin
+      method: Divide
+      config:
+        numerator: cpu_allocated
+        denominator: cpu_total
+        output: cpu_share
+
+    mem-share:
+      path: builtin
+      method: Divide
+      config:
+        numerator: mem_allocated
+        denominator: mem_total
+        output: mem_share
+
+    weight-cpu-share:
+      path: builtin
+      method: Coefficient
+      config:
+        input-parameter: cpu_share
+        coefficient: 0.7
+        output-parameter: weighted_cpu_share
+
+    weight-mem-share:
+      path: builtin
+      method: Coefficient
+      config:
+        input-parameter: mem_share
+        coefficient: 0.3
+        output-parameter: weighted_mem_share
+
+    reservation-share:
+      path: builtin
+      method: Sum
+      config:
+        input-parameters:
+          - weighted_cpu_share
+          - weighted_mem_share
+        output-parameter: reservation_share
+
+    scale-host-power:
+      path: builtin
+      method: Multiply
+      config:
+        input-parameters:
+          - host_power_watts
+          - reservation_share
+        output-parameter: node_power_watts
+
+    duration-to-hours:
+      path: builtin
+      method: Coefficient
+      config:
+        input-parameter: duration
+        coefficient: "=1/3600"
+        output-parameter: duration_hours
+
+    watts-to-kw:
+      path: builtin
+      method: Coefficient
+      config:
+        input-parameter: node_power_watts
+        coefficient: "=1/1000"
+        output-parameter: kilowatts
+
+    calculate-energy:
+      path: builtin
+      method: Multiply
+      config:
+        input-parameters:
+          - duration_hours
+          - kilowatts
+        output-parameter: energy
+
+    sci-o:
+      path: builtin
+      method: Multiply
+      config:
+        input-parameters:
+          - grid_carbon_intensity
+          - energy
+        output-parameter: carbon_operational
+      parameter-metadata:
+        outputs:
+          carbon_operational:
+            description: Operational carbon emissions
+            unit: gCO2eq
+            aggregation-method:
+              time: sum
+              component: sum
+
+    mem-bytes-to-gb:
+      path: builtin
+      method: Coefficient
+      config:
+        input-parameter: mem_allocated
+        coefficient: "=1/1073741824"
+        output-parameter: memory_gb
+
+    sci-m:
+      path: builtin
+      method: SciEmbodied
+      config:
+        lifespan: 157680000
+        output-parameter: carbon_embodied
+      mapping:
+        vCPUs: cpu_allocated
+        memory: memory_gb
+      parameter-metadata:
+        outputs:
+          carbon_embodied:
+            description: Embodied carbon emissions
+            unit: gCO2eq
+            aggregation-method:
+              time: sum
+              component: sum
+
+    sum-carbon:
+      path: builtin
+      method: Sum
+      config:
+        input-parameters:
+          - carbon_operational
+          - carbon_embodied
+        output-parameter: carbon
+
+    sci:
+      path: builtin
+      method: Sci
+      config:
+        functional-unit: job
+
+tree:
+  children:
+    ~: ~

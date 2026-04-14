@@ -38,6 +38,23 @@ class PrometheusEngine:
             raise RuntimeError(f"Prometheus query failed: {data.get('error', 'unknown error')}")
         return data["data"]["result"]
 
+    def query_instant(self, metric: MetricDefinition, time: int, node: str = "", jobid: str = "") -> list[dict]:
+        """Instant query at a specific Unix timestamp. Returns a vector — one value per series.
+
+        Each result has 'value: [timestamp, val]' rather than 'values'. Use this for
+        scalar metrics (capacity/allocation constants) where a single sample is needed.
+        """
+        query = metric.query.format(node=node, jobid=jobid)
+        response = requests.get(
+            f"{self.base_url}/api/v1/query",
+            params={"query": query, "time": time},
+        )
+        response.raise_for_status()
+        data = response.json()
+        if data["status"] != "success":
+            raise RuntimeError(f"Prometheus query failed: {data.get('error', 'unknown error')}")
+        return data["data"]["result"]
+
     def query(self, metric: MetricDefinition, node: str = "", jobid: str = "", lookback_days: int = LOOKBACK_DAYS) -> list[dict]:
         query = f"{metric.query.format(node=node, jobid=jobid)}[{lookback_days}d]"
         response = requests.get(

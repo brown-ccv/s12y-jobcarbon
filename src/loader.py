@@ -36,20 +36,36 @@ def _process_node(engine: PrometheusEngine, node: str, jobid: str, window: Windo
     if gpu_results:
         metrics["gpu_power"] = gpu_results
 
-    cpu_series = engine.query_range(METRIC_REGISTRY["node_cpu_total"], window, node=node)
-    mem_series = engine.query_range(METRIC_REGISTRY["node_mem_total"], window, node=node)
+    cpu_result     = engine.query_instant(METRIC_REGISTRY["node_cpu_total"],  window.end, node=node)
+    mem_result     = engine.query_instant(METRIC_REGISTRY["node_mem_total"],  window.end, node=node)
+    cpu_alloc_result = engine.query_instant(METRIC_REGISTRY["cgroup_cpus"],     window.end, node=node, jobid=jobid)
+    mem_alloc_result = engine.query_instant(METRIC_REGISTRY["cgroup_mem_total"], window.end, node=node, jobid=jobid)
 
-    if not cpu_series:
+    if not cpu_result:
         raise ValueError(f"no cpu capacity data for node {node}")
-    if not mem_series:
+    if not mem_result:
         raise ValueError(f"no memory capacity data for node {node}")
+    if not cpu_alloc_result:
+        raise ValueError(f"no cpu allocation data for job {jobid} on node {node}")
+    if not mem_alloc_result:
+        raise ValueError(f"no memory allocation data for job {jobid} on node {node}")
 
     # Prometheus returns all sample values as strings and may encode integers as floats
     # (e.g. "8.000000e+00"), so int() alone would fail. float() normalises first
-    cpu_total = int(float(cpu_series[0]["values"][0][1]))
-    mem_total = int(float(mem_series[0]["values"][0][1]))
+    cpu_total     = int(float(cpu_result[0]["value"][1]))
+    mem_total     = int(float(mem_result[0]["value"][1]))
+    cpu_allocated = int(float(cpu_alloc_result[0]["value"][1]))
+    mem_allocated = int(float(mem_alloc_result[0]["value"][1]))
 
-    return NodeData(node=node, profile=profile, metrics=metrics, cpu_total=cpu_total, mem_total=mem_total)
+    return NodeData(
+        node=node,
+        profile=profile,
+        metrics=metrics,
+        cpu_total=cpu_total,
+        mem_total=mem_total,
+        cpu_allocated=cpu_allocated,
+        mem_allocated=mem_allocated,
+    )
 
 
 def process_job(engine: PrometheusEngine, jobid: str, lookback_days: int = LOOKBACK_DAYS) -> list[NodeData]:

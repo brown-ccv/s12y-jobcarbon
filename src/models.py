@@ -10,6 +10,8 @@ class NodeData:
     metrics: dict[str, list[dict]]
     cpu_total: int
     mem_total: int
+    cpu_allocated: int
+    mem_allocated: int
 
 
 @dataclass

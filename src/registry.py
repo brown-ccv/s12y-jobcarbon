@@ -28,8 +28,9 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     ),
     "gpu_power": MetricDefinition(
         id="gpu_power",
-        query="sum by (instance) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}})",
-        unit="milliwatts",
+        # Multiply by 1000 to convert milliwatts → microwatts, consistent with all other power metrics.
+        query="sum by (instance) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}} * 1000)",
+        unit="microwatts",
     ),
     "node_cpu_total": MetricDefinition(
         id="node_cpu_total",
@@ -52,6 +53,17 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         id="cgroup_window",
         query="cgroup_cpu_total_seconds{{instance=~'{node}:.*',jobid='{jobid}'}}",
         unit="seconds",
+    ),
+    # step='',task='' filters to the job-level cgroup row, excluding sub-cgroup steps/tasks.
+    "cgroup_cpus": MetricDefinition(
+        id="cgroup_cpus",
+        query="cgroup_cpus{{instance=~'{node}:.*',jobid='{jobid}',step='',task=''}}",
+        unit="cores",
+    ),
+    "cgroup_mem_total": MetricDefinition(
+        id="cgroup_mem_total",
+        query="cgroup_memory_total_bytes{{instance=~'{node}:.*',jobid='{jobid}',step='',task=''}}",
+        unit="bytes",
     ),
 }
 
