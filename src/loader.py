@@ -1,16 +1,6 @@
-from dataclasses import dataclass
-
 from engine import LOOKBACK_DAYS, PrometheusEngine, Window
+from models import NodeData
 from registry import METRIC_REGISTRY, PROFILE_METRICS, NodeProfile
-
-
-@dataclass
-class NodeData:
-    node: str
-    profile: NodeProfile
-    metrics: dict[str, list[dict]]
-    cpu_total: int
-    mem_total: int
 
 
 def _get_nodes(engine: PrometheusEngine, jobid: str, lookback_days: int) -> tuple[list[str], Window]:
@@ -27,13 +17,24 @@ def _get_nodes(engine: PrometheusEngine, jobid: str, lookback_days: int) -> tupl
 
 def _process_node(engine: PrometheusEngine, node: str, jobid: str, window: Window) -> NodeData:
     dram_results = engine.query_range(METRIC_REGISTRY["dram_power"], window, node=node)
-    profile = NodeProfile.FULL if dram_results else NodeProfile.HOST_ONLY
+    gpu_results  = engine.query_range(METRIC_REGISTRY["gpu_power"],  window, node=node, jobid=jobid)
+
+    if dram_results and gpu_results:
+        profile = NodeProfile.FULL_GPU
+    elif dram_results and not gpu_results:
+        profile = NodeProfile.FULL
+    elif not dram_results and gpu_results:
+        profile = NodeProfile.HOST_ONLY_GPU
+    else:
+        profile = NodeProfile.HOST_ONLY
 
     metrics = {}
     for mid in PROFILE_METRICS[profile]:
         metrics[mid] = engine.query_range(METRIC_REGISTRY[mid], window, node=node, jobid=jobid)
-    if profile == NodeProfile.FULL:
+    if dram_results:
         metrics["dram_power"] = dram_results
+    if gpu_results:
+        metrics["gpu_power"] = gpu_results
 
     cpu_series = engine.query_range(METRIC_REGISTRY["node_cpu_total"], window, node=node)
     mem_series = engine.query_range(METRIC_REGISTRY["node_mem_total"], window, node=node)

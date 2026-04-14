@@ -13,12 +13,12 @@ class MetricDefinition:
 METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "cpu_power": MetricDefinition(
         id="cpu_power",
-        query="scaph_domain_power_microwatts{{domain_name='core',instance=~'{node}:.*'}}",
+        query="sum by (instance) (scaph_domain_power_microwatts{{domain_name='core',instance=~'{node}:.*'}})",
         unit="microwatts",
     ),
     "dram_power": MetricDefinition(
         id="dram_power",
-        query="scaph_domain_power_microwatts{{domain_name='dram',instance=~'{node}:.*'}}",
+        query="sum by (instance) (scaph_domain_power_microwatts{{domain_name='dram',instance=~'{node}:.*'}})",
         unit="microwatts",
     ),
     "host_power": MetricDefinition(
@@ -28,7 +28,7 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     ),
     "gpu_power": MetricDefinition(
         id="gpu_power",
-        query="nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}}",
+        query="sum by (instance) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}})",
         unit="milliwatts",
     ),
     "node_cpu_total": MetricDefinition(
@@ -57,14 +57,16 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
 
 
 class NodeProfile(Enum):
-    FULL      = "full"
-    HOST_ONLY = "host_only"
+    FULL          = "full"
+    FULL_GPU      = "full_gpu"
+    HOST_ONLY     = "host_only"
+    HOST_ONLY_GPU = "host_only_gpu"
 
 
-# gpu_power is in both profiles — an empty result means no GPUs on this job/node.
-# dram_power is fetched during profile detection and reused for FULL, not re-fetched.
 # node_cpu_total and node_mem_total are fetched separately and stored as scalars on NodeData.
 PROFILE_METRICS: dict[NodeProfile, list[str]] = {
-    NodeProfile.FULL:      ["cpu_power", "dram_power", "gpu_power"],
-    NodeProfile.HOST_ONLY: ["host_power", "gpu_power"],
+    NodeProfile.FULL:          ["cpu_power", "dram_power", "host_power"],
+    NodeProfile.FULL_GPU:      ["cpu_power", "dram_power", "host_power", "gpu_power"],
+    NodeProfile.HOST_ONLY:     ["host_power"],
+    NodeProfile.HOST_ONLY_GPU: ["host_power", "gpu_power"],
 }
