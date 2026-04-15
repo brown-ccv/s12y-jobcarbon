@@ -13,17 +13,22 @@ LOOKBACK_DAYS = int(os.environ.get("JOBCARBON_LOOKBACK_DAYS", 30))
 @dataclass
 class Window:
     start: int  # unix timestamp
-    end: int    # unix timestamp
+    end: int  # unix timestamp
 
 
 class PrometheusEngine:
-    def __init__(self, base_url: str, step_seconds: int = STEP_SECONDS):
+    def __init__(
+        self, base_url: str = PROMETHEUS_URL, step_seconds: int = STEP_SECONDS
+    ):
         self.base_url = base_url.rstrip("/")
         self.step_seconds = step_seconds
 
-    def query_range(self, metric: MetricDefinition, window: Window, node: str = "", jobid: str = "", step_seconds: int | None = None) -> list[dict]:
+    def query_range(
+        self, metric: MetricDefinition, window: Window, node: str = "", jobid: str = ""
+    ) -> list[dict]:
+        """Range query for a specific window of time"""
         query = metric.query.format(node=node, jobid=jobid)
-        step = step_seconds if step_seconds is not None else self.step_seconds
+        step = self.step_seconds
         response = requests.get(
             f"{self.base_url}/api/v1/query_range",
             params={
@@ -36,15 +41,15 @@ class PrometheusEngine:
         response.raise_for_status()
         data = response.json()
         if data["status"] != "success":
-            raise RuntimeError(f"Prometheus query failed: {data.get('error', 'unknown error')}")
+            raise RuntimeError(
+                f"Prometheus query failed: {data.get('error', 'unknown error')}"
+            )
         return data["data"]["result"]
 
-    def query_instant(self, metric: MetricDefinition, time: int, node: str = "", jobid: str = "") -> list[dict]:
-        """Instant query at a specific Unix timestamp. Returns a vector — one value per series.
-
-        Each result has 'value: [timestamp, val]' rather than 'values'. Use this for
-        scalar metrics (capacity/allocation constants) where a single sample is needed.
-        """
+    def query_instant(
+        self, metric: MetricDefinition, time: int, node: str = "", jobid: str = ""
+    ) -> list[dict]:
+        """Instant query at a specific Unix timestamp"""
         query = metric.query.format(node=node, jobid=jobid)
         response = requests.get(
             f"{self.base_url}/api/v1/query",
@@ -53,10 +58,19 @@ class PrometheusEngine:
         response.raise_for_status()
         data = response.json()
         if data["status"] != "success":
-            raise RuntimeError(f"Prometheus query failed: {data.get('error', 'unknown error')}")
+            raise RuntimeError(
+                f"Prometheus query failed: {data.get('error', 'unknown error')}"
+            )
         return data["data"]["result"]
 
-    def query(self, metric: MetricDefinition, node: str = "", jobid: str = "", lookback_days: int = LOOKBACK_DAYS) -> list[dict]:
+    def query_lookback(
+        self,
+        metric: MetricDefinition,
+        node: str = "",
+        jobid: str = "",
+        lookback_days: int = LOOKBACK_DAYS,
+    ) -> list[dict]:
+        """Lookback query, find metric in the last n days"""
         query = f"{metric.query.format(node=node, jobid=jobid)}[{lookback_days}d]"
         response = requests.get(
             f"{self.base_url}/api/v1/query",
@@ -65,5 +79,7 @@ class PrometheusEngine:
         response.raise_for_status()
         data = response.json()
         if data["status"] != "success":
-            raise RuntimeError(f"Prometheus query failed: {data.get('error', 'unknown error')}")
+            raise RuntimeError(
+                f"Prometheus query failed: {data.get('error', 'unknown error')}"
+            )
         return data["data"]["result"]

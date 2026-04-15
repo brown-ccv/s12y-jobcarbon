@@ -13,7 +13,7 @@ class MetricFrame:
 
 
 def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
-    """Unpack a Prometheus result list (single aggregated series) into a DataFrame."""
+    """Unpack a Prometheus result list into a DataFrame"""
     rows = [
         {"timestamp": int(ts), metric_id: float(val)}
         for series in results
@@ -25,11 +25,7 @@ def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
 
 
 def _assert_timestamps_aligned(metric_frames: list[MetricFrame]) -> None:
-    """Raise if any frame's timestamps diverge from the first.
-
-    socket_power and dram_power come from the same Scaphandre exporter and are
-    always scraped together, so divergence indicates a data source problem.
-    """
+    """Raise if any frame's timestamps diverge from the first"""
     first = metric_frames[0]
     for mf in metric_frames[1:]:
         if not first.frame["timestamp"].equals(mf.frame["timestamp"]):
@@ -41,12 +37,7 @@ def _assert_timestamps_aligned(metric_frames: list[MetricFrame]) -> None:
 
 
 def synthesize(node: str, metrics: dict[str, list[dict]]) -> list[Observation]:
-    """Combine per-metric Prometheus results into a list of Observations.
-
-    Each Observation contains timestamp, duration (seconds), node, and one field
-    per metric. Metrics are inner-joined on timestamp — rows present in all metrics
-    are kept.
-    """
+    """Combine per-metric Prometheus results into a list of Observations"""
     metric_frames = [
         MetricFrame(metric_id=metric_id, frame=_to_dataframe(metric_id, results))
         for metric_id, results in metrics.items()

@@ -42,19 +42,17 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         query="slurm_node_mem_total{{node='{node}'}}",
         unit="megabytes",
     ),
-    # engine.query() only — no instance filter, bakes step/task filters in to return
-    # one series per node. Used to discover nodes and derive the job window.
-    "job_cgroup": MetricDefinition(
-        id="job_cgroup",
-        query="cgroup_cpu_total_seconds{{jobid='{jobid}',step='',task=''}}",
-        unit="seconds",
-    ),
     "cgroup_window": MetricDefinition(
         id="cgroup_window",
         query="cgroup_cpu_total_seconds{{instance=~'{node}:.*',jobid='{jobid}'}}",
         unit="seconds",
     ),
     # step='',task='' filters to the job-level cgroup row, excluding sub-cgroup steps/tasks.
+    "job_cgroup": MetricDefinition(
+        id="job_cgroup",
+        query="cgroup_cpu_total_seconds{{jobid='{jobid}',step='',task=''}}",
+        unit="seconds",
+    ),
     "cgroup_cpus": MetricDefinition(
         id="cgroup_cpus",
         query="cgroup_cpus{{instance=~'{node}:.*',jobid='{jobid}',step='',task=''}}",
@@ -69,16 +67,15 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
 
 
 class NodeProfile(Enum):
-    FULL          = "full"
-    FULL_GPU      = "full_gpu"
-    HOST_ONLY     = "host_only"
+    FULL = "full"
+    FULL_GPU = "full_gpu"
+    HOST_ONLY = "host_only"
     HOST_ONLY_GPU = "host_only_gpu"
 
 
-# node_cpu_total and node_mem_total are fetched separately and stored as scalars on NodeData.
 PROFILE_METRICS: dict[NodeProfile, list[str]] = {
-    NodeProfile.FULL:          ["cpu_power", "dram_power"],
-    NodeProfile.FULL_GPU:      ["cpu_power", "dram_power", "gpu_power"],
-    NodeProfile.HOST_ONLY:     ["host_power"],
+    NodeProfile.FULL: ["cpu_power", "dram_power"],
+    NodeProfile.FULL_GPU: ["cpu_power", "dram_power", "gpu_power"],
+    NodeProfile.HOST_ONLY: ["host_power"],
     NodeProfile.HOST_ONLY_GPU: ["host_power", "gpu_power"],
 }

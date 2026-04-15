@@ -7,7 +7,9 @@ from loader import _get_nodes, _process_node, process_job
 from registry import NodeProfile
 
 
-def _make_process_node_engine(dram=False, gpu=False, range_side_effect=None, instant_side_effect=None):
+def _make_process_node_engine(
+    dram=False, gpu=False, range_side_effect=None, instant_side_effect=None
+):
     """Return a mock engine configured for _process_node tests.
 
     Defaults return timeseries for all metrics except dram/gpu (controlled by flags)
@@ -57,19 +59,25 @@ def test_get_nodes_raises_when_empty():
         _get_nodes(engine, jobid="42", lookback_days=30)
 
 
-@pytest.mark.parametrize("dram,gpu,expected_profile", [
-    (True,  False, NodeProfile.FULL),
-    (True,  True,  NodeProfile.FULL_GPU),
-    (False, False, NodeProfile.HOST_ONLY),
-    (False, True,  NodeProfile.HOST_ONLY_GPU),
-])
+@pytest.mark.parametrize(
+    "dram,gpu,expected_profile",
+    [
+        (True, False, NodeProfile.FULL),
+        (True, True, NodeProfile.FULL_GPU),
+        (False, False, NodeProfile.HOST_ONLY),
+        (False, True, NodeProfile.HOST_ONLY_GPU),
+    ],
+)
 def test_process_node_profile(dram, gpu, expected_profile):
     engine = _make_process_node_engine(dram=dram, gpu=gpu)
     result = _process_node(engine, "node1", "42", Window(start=1000, end=2000))
     assert result.profile == expected_profile
 
 
-@pytest.mark.parametrize("empty_metric", ["node_cpu_total", "node_mem_total", "cgroup_cpus", "cgroup_mem_total"])
+@pytest.mark.parametrize(
+    "empty_metric",
+    ["node_cpu_total", "node_mem_total", "cgroup_cpus", "cgroup_mem_total"],
+)
 def test_process_node_raises_when_capacity_query_empty(empty_metric):
     def return_instant(metric, time, node="", jobid=""):
         if metric.id == empty_metric:

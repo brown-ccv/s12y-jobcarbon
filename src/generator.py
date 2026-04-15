@@ -1,4 +1,5 @@
 import dataclasses
+import os
 from pathlib import Path
 
 import yaml
@@ -7,6 +8,7 @@ from models import NodeData
 from synthesis import synthesize
 
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+GRID_CARBON_INTENSITY = float(os.environ.get("JOBCARBON_GRID_CARBON_INTENSITY", 381))
 
 
 def _load_template(node_data: NodeData) -> dict:
@@ -18,7 +20,7 @@ def _load_template(node_data: NodeData) -> dict:
 def generate_manifest(
     jobid: str,
     node_data_list: list[NodeData],
-    grid_carbon_intensity: float,
+    grid_carbon_intensity: float = GRID_CARBON_INTENSITY,
 ) -> dict:
     """Build one IMP manifest for an entire job, with one tree child per node.
 
@@ -27,13 +29,10 @@ def generate_manifest(
     """
     templates = {nd.node: _load_template(nd) for nd in node_data_list}
 
-    # Union of all plugins across profiles — later profiles do not overwrite earlier
-    # ones with the same key, since identical plugin names across profiles have identical
-    # definitions (same path/method/config).
     all_plugins: dict = {}
     for tmpl in templates.values():
         for name, defn in tmpl["initialize"]["plugins"].items():
-            all_plugins.setdefault(name, defn)
+            all_plugins[name] = defn
 
     # Use aggregation from the first template (identical across all profiles).
     aggregation = next(iter(templates.values()))["aggregation"]

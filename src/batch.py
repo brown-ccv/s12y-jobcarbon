@@ -2,12 +2,10 @@
 import os
 from argparse import ArgumentParser
 
-from engine import LOOKBACK_DAYS, PROMETHEUS_URL, PrometheusEngine
+from engine import PrometheusEngine
 from generator import generate_manifest
 from loader import process_job
 from yamldump import dump
-
-GRID_CARBON_INTENSITY = 381
 
 
 def main():
@@ -21,13 +19,13 @@ def main():
 
     os.makedirs(args.outputdir, exist_ok=True)
 
-    engine = PrometheusEngine(PROMETHEUS_URL)
+    engine = PrometheusEngine()
 
     for jobid in jobids:
         print(jobid, end="... ", flush=True)
         try:
-            node_data_list = process_job(engine, jobid, LOOKBACK_DAYS)
-            manifest = generate_manifest(jobid, node_data_list, GRID_CARBON_INTENSITY)
+            node_data_list = process_job(engine, jobid)
+            manifest = generate_manifest(jobid, node_data_list)
             out = os.path.join(args.outputdir, f"{jobid}.yml")
             with open(out, "w") as f:
                 f.write(dump(manifest))

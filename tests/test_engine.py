@@ -8,7 +8,11 @@ BASE_URL = "http://localhost:9999"
 
 METRIC = MetricDefinition(id="test", query="test_metric{{node='{node}'}}", unit="watts")
 
-PROM_ERROR = {"status": "error", "errorType": "bad_data", "error": "something went wrong"}
+PROM_ERROR = {
+    "status": "error",
+    "errorType": "bad_data",
+    "error": "something went wrong",
+}
 
 
 @responses.activate

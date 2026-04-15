@@ -32,7 +32,9 @@ def test_synthesize_obs_count_matches_timestamps():
 
 def test_synthesize_raises_on_misaligned_timestamps():
     metrics = {
-        "cpu_power":  [prom_series("node1:9191", [(1000, 1.0), (1060, 1.0), (1120, 1.0)])],
+        "cpu_power": [
+            prom_series("node1:9191", [(1000, 1.0), (1060, 1.0), (1120, 1.0)])
+        ],
         "dram_power": [prom_series("node1:9191", [(1000, 1.0), (1060, 1.0)])],
     }
     with pytest.raises(ValueError):
