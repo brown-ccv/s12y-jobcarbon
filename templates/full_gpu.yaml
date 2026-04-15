@@ -3,17 +3,15 @@ description: ~
 aggregation:
   metrics:
     - duration
-    - energy
+    - power
     - carbon_operational
     - carbon_embodied
     - carbon
-    - sci
   type: both
 pipeline:
   compute:
     - cpu-microwatts-to-watts
     - dram-microwatts-to-watts
-    - host-microwatts-to-watts
     - gpu-microwatts-to-watts
     - sum-scaph-gpu-power
     - duration-to-hours
@@ -23,7 +21,6 @@ pipeline:
     - mem-bytes-to-gb
     - sci-m
     - sum-carbon
-    - sci
 initialize:
   plugins:
     cpu-microwatts-to-watts:
@@ -42,22 +39,6 @@ initialize:
         coefficient: "=1/1000000"
         output-parameter: dram_power_watts
 
-    host-microwatts-to-watts:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: host_power
-        coefficient: "=1/1000000"
-        output-parameter: host_power_watts
-
-    gpu-microwatts-to-watts:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: gpu_power
-        coefficient: "=1/1000000"
-        output-parameter: gpu_power_watts
-
     sum-scaph-gpu-power:
       path: builtin
       method: Sum
@@ -65,7 +46,6 @@ initialize:
         input-parameters:
           - cpu_power_watts
           - dram_power_watts
-          - host_power_watts
           - gpu_power_watts
         output-parameter: node_power_watts
 
@@ -92,7 +72,15 @@ initialize:
         input-parameters:
           - duration_hours
           - kilowatts
-        output-parameter: energy
+        output-parameter: power
+      parameter-metadata:
+        outputs:
+          power:
+            description: Energy consumed per observation interval
+            unit: kWh
+            aggregation-method:
+              time: avg
+              component: sum
 
     sci-o:
       path: builtin
@@ -100,7 +88,7 @@ initialize:
       config:
         input-parameters:
           - grid_carbon_intensity
-          - energy
+          - power
         output-parameter: carbon_operational
       parameter-metadata:
         outputs:
@@ -145,12 +133,14 @@ initialize:
           - carbon_operational
           - carbon_embodied
         output-parameter: carbon
-
-    sci:
-      path: builtin
-      method: Sci
-      config:
-        functional-unit: job
+      parameter-metadata:
+        outputs:
+          carbon:
+            description: Total carbon emissions
+            unit: gCO2eq
+            aggregation-method:
+              time: sum
+              component: sum
 
 tree:
   children:

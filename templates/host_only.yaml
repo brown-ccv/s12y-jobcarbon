@@ -3,11 +3,10 @@ description: ~
 aggregation:
   metrics:
     - duration
-    - energy
+    - power
     - carbon_operational
     - carbon_embodied
     - carbon
-    - sci
   type: both
 pipeline:
   compute:
@@ -25,7 +24,6 @@ pipeline:
     - mem-bytes-to-gb
     - sci-m
     - sum-carbon
-    - sci
 initialize:
   plugins:
     host-microwatts-to-watts:
@@ -109,7 +107,15 @@ initialize:
         input-parameters:
           - duration_hours
           - kilowatts
-        output-parameter: energy
+        output-parameter: power
+      parameter-metadata:
+        outputs:
+          power:
+            description: Energy consumed per observation interval
+            unit: kWh
+            aggregation-method:
+              time: avg
+              component: sum
 
     sci-o:
       path: builtin
@@ -117,7 +123,7 @@ initialize:
       config:
         input-parameters:
           - grid_carbon_intensity
-          - energy
+          - power
         output-parameter: carbon_operational
       parameter-metadata:
         outputs:
@@ -162,12 +168,14 @@ initialize:
           - carbon_operational
           - carbon_embodied
         output-parameter: carbon
-
-    sci:
-      path: builtin
-      method: Sci
-      config:
-        functional-unit: job
+      parameter-metadata:
+        outputs:
+          carbon:
+            description: Total carbon emissions
+            unit: gCO2eq
+            aggregation-method:
+              time: sum
+              component: sum
 
 tree:
   children:

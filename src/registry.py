@@ -13,7 +13,7 @@ class MetricDefinition:
 METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "cpu_power": MetricDefinition(
         id="cpu_power",
-        query="sum by (instance) (scaph_domain_power_microwatts{{domain_name='core',instance=~'{node}:.*'}})",
+        query="sum by (instance) (scaph_socket_power_microwatts{{instance=~'{node}:.*'}})",
         unit="microwatts",
     ),
     "dram_power": MetricDefinition(
@@ -77,8 +77,8 @@ class NodeProfile(Enum):
 
 # node_cpu_total and node_mem_total are fetched separately and stored as scalars on NodeData.
 PROFILE_METRICS: dict[NodeProfile, list[str]] = {
-    NodeProfile.FULL:          ["cpu_power", "dram_power", "host_power"],
-    NodeProfile.FULL_GPU:      ["cpu_power", "dram_power", "host_power", "gpu_power"],
+    NodeProfile.FULL:          ["cpu_power", "dram_power"],
+    NodeProfile.FULL_GPU:      ["cpu_power", "dram_power", "gpu_power"],
     NodeProfile.HOST_ONLY:     ["host_power"],
     NodeProfile.HOST_ONLY_GPU: ["host_power", "gpu_power"],
 }

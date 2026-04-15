@@ -19,14 +19,16 @@ def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
         for series in results
         for ts, val in series["values"]
     ]
+    if not rows:
+        return pd.DataFrame(columns=["timestamp", metric_id])
     return pd.DataFrame(rows)
 
 
 def _assert_timestamps_aligned(metric_frames: list[MetricFrame]) -> None:
     """Raise if any frame's timestamps diverge from the first.
 
-    query_range normalises all metrics to the same step boundaries, so divergence
-    indicates a data source problem rather than expected scrape jitter.
+    socket_power and dram_power come from the same Scaphandre exporter and are
+    always scraped together, so divergence indicates a data source problem.
     """
     first = metric_frames[0]
     for mf in metric_frames[1:]:

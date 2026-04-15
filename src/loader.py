@@ -53,7 +53,7 @@ def _process_node(engine: PrometheusEngine, node: str, jobid: str, window: Windo
     # Prometheus returns all sample values as strings and may encode integers as floats
     # (e.g. "8.000000e+00"), so int() alone would fail. float() normalises first
     cpu_total     = int(float(cpu_result[0]["value"][1]))
-    mem_total     = int(float(mem_result[0]["value"][1]))
+    mem_total     = int(float(mem_result[0]["value"][1])) * 1024 * 1024
     cpu_allocated = int(float(cpu_alloc_result[0]["value"][1]))
     mem_allocated = int(float(mem_alloc_result[0]["value"][1]))
 

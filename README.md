@@ -1,69 +1,98 @@
 # Job Carbon
 
-`jobcarbon` is a quick script to pull data about OSCAR jobs into a format that is consumable by Impact Framework. `jobcarbon` uses the same database of information as `jobstats` to gather its the runtime statistics
+`jobcarbon` estimates the carbon footprint of OSCAR Slurm jobs. It queries Prometheus
+for power telemetry (Scaphandre CPU/DRAM, NVIDIA GPU) and job resource allocation data,
+then produces a complete [Impact Framework](https://if.greensoftware.foundation/) manifest
+ready to be evaluated by `if-run`.
 
 ## Prerequisites
 
-`jobcarbon` uses `uv` to manage dependencies. To install `uv` refer to the [`uv` documentation](https://docs.astral.sh/uv/), or run:
+`jobcarbon` uses `uv` to manage dependencies. To install `uv` refer to the
+[`uv` documentation](https://docs.astral.sh/uv/), or run:
 
-```python
+```sh
 pip install uv
 ```
 
+A Prometheus instance must be reachable. By default `jobcarbon` connects to
+`http://localhost:9390`. Override this with the `JOBCARBON_PROMETHEUS_URL` environment
+variable:
+
+```sh
+export JOBCARBON_PROMETHEUS_URL=http://localhost:9390
+```
+
+Two other optional environment variables control query behaviour:
+
+| Variable | Default | Description |
+|---|---|---|
+| `JOBCARBON_STEP_SECONDS` | `60` | Time-series resolution in seconds |
+| `JOBCARBON_LOOKBACK_DAYS` | `30` | How far back to search for a job's data |
+
 ## Running
 
-Run any of your slurm jobs normally. Any job that takes longer than a minute should work with `jobcarbon`. Once your job is completed, run
+Pass a Slurm job ID. The tool discovers the job's time window and nodes automatically
+from Prometheus cgroup data — no start/end timestamps are required.
 
 ```sh
-sacct -j $JOB_ID -o Job,Start,End
+uv run python src/jobcarbon.py $JOB_ID
 ```
 
-The output from that command will be the input to `jobcarbon`. To run `jobcarbon` run the following command:
+The output is a complete Impact Framework manifest printed to stdout. Redirect it to a
+file and pass it to `if-run`:
 
 ```sh
-./jobcarbon.py $JOB_ID $START_TIME $END_TIME
+uv run python src/jobcarbon.py $JOB_ID > manifest.yaml
+if-run -m manifest.yaml -o output
 ```
 
-For example, I ran a test job. The job id of that job is 7980388. Running the `sacct` command gives me:
+### Example
 
 ```sh
-$ sacct -j 7980388 -o Job,Start,End
-JobID                      Start                 End
------------- ------------------- -------------------
-7980388      2025-02-03T11:17:18 2025-02-03T11:24:58
-7980388.bat+ 2025-02-03T11:17:18 2025-02-03T11:24:58
-7980388.ext+ 2025-02-03T11:17:18 2025-02-03T11:24:58
-```
-
-The first like of the output data are the arguments to `jobcarbon`. I can then run `jobcarbon`:
-
-```sh
-$ ./jobcarbon.py 7980388      2025-02-03T11:17:18 2025-02-03T11:24:58
+$ uv run python src/jobcarbon.py 1667979 > manifest.yaml
+$ if-run -m manifest.yaml -o output
+$ head output.yaml
+aggregation:
+  metrics:
+    - duration
+    - energy
+    - carbon_operational
+    - carbon_embodied
+    - carbon
+  type: both
+...
 tree:
   children:
-    job7980388:
-      children:
-        node1735:
-          inputs:
-          - cgroup_cpu_system_seconds: '0.157958'
-            cgroup_cpu_total_seconds: '22.014421'
-            cgroup_cpu_user_seconds: '21.856462'
-            duration: 0.5
-            timestamp: 1738599468
-          - cgroup_cpu_system_seconds: '0.306046'
-            cgroup_cpu_total_seconds: '51.825791'
-            cgroup_cpu_user_seconds: '51.519745'
-            duration: 0.5
-            timestamp: 1738599498
-[...SNIP...]
+    node1648:
+      aggregated:
+        carbon_operational: 2650.032
+        carbon_embodied: 2532.548
+        carbon: 5182.580
+      ...
 ```
 
-The output of `jobcarbon` is `yaml` that can be used as observations in an Impact Framework manifest file
+The manifest contains one child per compute node. Each node's pipeline is selected
+automatically based on available telemetry:
 
-## `batch.py`
+| Profile | Condition | Pipeline |
+|---|---|---|
+| `full` | Scaphandre CPU + DRAM data present | CPU + DRAM power → energy → carbon |
+| `full_gpu` | Scaphandre CPU + DRAM + GPU data present | CPU + DRAM + GPU power → energy → carbon |
+| `host_only` | Only whole-host Scaphandre power available | Host power scaled by reservation share → energy → carbon |
+| `host_only_gpu` | Whole-host power + GPU data | Host power (scaled) + GPU power → energy → carbon |
 
-Accompanying this is a python script that will generate entire manifests for the impact framework. This requires a .tsv file that contains: Job ID, Start and End times, and Slurm alloation.
+Carbon is reported in gCO2eq using a grid carbon intensity of **381 gCO2eq/kWh**
+(Rhode Island grid average). Both operational carbon (from energy use) and embodied
+carbon (from hardware manufacture, via `SciEmbodied`) are computed and summed.
 
-To create this TSV, you can use the script `generate-recent-jobs-query.js` in the [Slurm Account](https://github.com/brown-ccv/s12y-slurm-accounting) repository, and then export the result as a TSV.
+## Batch mode
 
-When executed, this script will create one manifest file for each line in the TSV in a specified output directory.
+`batch` generates manifests for a list of job IDs read from a plain text file (one ID
+per line) and writes one `.yml` file per job into an output directory:
+
+```sh
+uv run python src/batch.py jobs.txt output/
+```
+
+Jobs that fail (e.g. no Prometheus data found within the lookback window) are reported
+and skipped; processing continues for the remaining jobs.
