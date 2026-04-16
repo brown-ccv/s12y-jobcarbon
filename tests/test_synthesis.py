@@ -5,7 +5,7 @@ from synthesis import synthesize
 
 
 def _make_metrics(timestamps=(1000, 1060, 1120), **metric_values):
-    """Build a metrics dict with aligned timeseries for each named metric."""
+    """Build a metrics dict with aligned timeseries for each named metric"""
     return {
         metric_id: [prom_series("node1:9191", [(ts, val) for ts in timestamps])]
         for metric_id, val in metric_values.items()

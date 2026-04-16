@@ -8,7 +8,7 @@ class MetricDefinition:
     query: str  # PromQL template string, parameters: {node}, {jobid}
 
 
-# Nodes without Scaphandre data are skipped — no estimation fallback.
+# Nodes without Scaphandre data are skipped — no estimation fallback
 METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "cpu_power": MetricDefinition(
         id="cpu_power",
@@ -24,7 +24,7 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     ),
     "gpu_power": MetricDefinition(
         id="gpu_power",
-        # Multiply by 1000 to convert milliwatts → microwatts, consistent with all other power metrics.
+        # Multiply by 1000 to convert milliwatts → microwatts, consistent with all other power metrics
         query="sum by (instance) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}} * 1000)",
     ),
     "node_cpu_total": MetricDefinition(
@@ -39,7 +39,7 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         id="cgroup_window",
         query="cgroup_cpu_total_seconds{{instance=~'{node}:.*',jobid='{jobid}'}}",
     ),
-    # step='',task='' filters to the job-level cgroup row, excluding sub-cgroup steps/tasks.
+    # step='',task='' filters to the job-level cgroup row, excluding sub-cgroup steps/tasks
     "job_cgroup": MetricDefinition(
         id="job_cgroup",
         query="cgroup_cpu_total_seconds{{jobid='{jobid}',step='',task=''}}",

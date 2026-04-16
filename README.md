@@ -25,13 +25,13 @@ Two other optional environment variables control query behaviour:
 
 ## Running
 
-Pass a Slurm job ID. The tool discovers the job's time window and nodes automatically from Prometheus cgroup data — no start/end timestamps are required.
+Pass a Slurm job ID. The tool discovers the job's time window and nodes automatically from Prometheus cgroup data — no start/end timestamps are required
 
 ```sh
 uv run python src/jobcarbon.py $JOB_ID
 ```
 
-The output is a complete Impact Framework manifest printed to stdout. Redirect it to a file and pass it to `if-run`:
+The output is a complete Impact Framework manifest printed to stdout. Redirect it to a file and pass it to `if-run`
 
 ```sh
 uv run python src/jobcarbon.py $JOB_ID > manifest.yaml
@@ -72,7 +72,7 @@ The manifest contains one child per compute node. Each node's pipeline is select
 | `host_only` | Only whole-host Scaphandre power available | Host power scaled by reservation share to carbon |
 | `host_only_gpu` | Whole-host power + GPU data | Host power (scaled) + GPU power to carbon |
 
-Carbon is reported in gCO2eq using a grid carbon intensity of **381 gCO2eq/kWh** (Rhode Island grid average). Both operational carbon (from energy use) and embodied carbon (from hardware manufacture, via `SciEmbodied`) are computed and summed.
+Carbon is reported in gCO2eq using a grid carbon intensity of **381 gCO2eq/kWh** (Rhode Island grid average). Both operational carbon (from energy use) and embodied carbon (from hardware manufacture, via `SciEmbodied`) are computed and summed
 
 ## Batch mode
 
@@ -82,4 +82,4 @@ Carbon is reported in gCO2eq using a grid carbon intensity of **381 gCO2eq/kWh**
 uv run python src/batch.py jobs.txt output/
 ```
 
-Jobs that fail (e.g. no Prometheus data found within the lookback window) are reported and skipped; processing continues for the remaining jobs.
+Jobs that fail (e.g. no Prometheus data found within the lookback window) are reported and skipped; processing continues for the remaining jobs

@@ -12,7 +12,7 @@ GRID_CARBON_INTENSITY = float(os.environ.get("JOBCARBON_GRID_CARBON_INTENSITY", 
 
 
 def _load_template(node_data: NodeData) -> dict:
-    """Load the YAML pipeline template for the node's profile."""
+    """Load the YAML pipeline template for the node's profile"""
     template_path = TEMPLATES_DIR / f"{node_data.profile.value}.yaml"
     with template_path.open() as f:
         return yaml.safe_load(f)
@@ -23,10 +23,10 @@ def generate_manifest(
     node_data: list[NodeData],
     grid_carbon_intensity: float = GRID_CARBON_INTENSITY,
 ) -> dict:
-    """Build one IMP manifest for an entire job, with one tree child per node.
+    """Build one IMP manifest for an entire job, with one tree child per node
 
-    The initialize block is the union of plugins from all node profiles present.
-    Each child declares its own pipeline list drawn from its profile template.
+    The initialize block is the union of plugins from all node profiles present
+    Each child declares its own pipeline list drawn from its profile template
     """
     templates = {nd.node: _load_template(nd) for nd in node_data}
 
@@ -35,7 +35,7 @@ def generate_manifest(
         for name, defn in tmpl["initialize"]["plugins"].items():
             all_plugins[name] = defn
 
-    # Use aggregation from the first template (identical across all profiles).
+    # Use aggregation from the first template (identical across all profiles)
     aggregation = next(iter(templates.values()))["aggregation"]
 
     manifest: dict = {
@@ -59,7 +59,7 @@ def _build_node(
     template: dict,
     grid_carbon_intensity: float,
 ) -> dict:
-    """Build the pipeline, defaults, and inputs dict for a single tree child."""
+    """Build the pipeline, defaults, and inputs dict for a single tree child"""
     observations = synthesize(node_data.node, node_data.metrics)
     return {
         "pipeline": template["pipeline"],

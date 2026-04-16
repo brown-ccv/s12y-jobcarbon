@@ -24,7 +24,7 @@ class PrometheusEngine:
         self.step_seconds = step_seconds
 
     def _parse_response(self, response: requests.Response):
-        """Raise on HTTP or Prometheus-level errors and return the result list."""
+        """Raise on HTTP or Prometheus-level errors and return the result list"""
         response.raise_for_status()
         data = response.json()
         if data["status"] != "success":

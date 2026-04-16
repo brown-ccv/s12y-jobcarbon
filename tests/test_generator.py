@@ -5,7 +5,7 @@ from registry import NodeProfile
 
 
 def _make_node_data(node="node1", profile=NodeProfile.HOST_ONLY):
-    """Build a minimal NodeData for generator tests with a single host_power timeseries."""
+    """Build a minimal NodeData for generator tests with a single host_power timeseries"""
     return NodeData(
         node=node,
         profile=profile,

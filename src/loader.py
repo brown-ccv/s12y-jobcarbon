@@ -4,7 +4,7 @@ from registry import METRIC_REGISTRY, PROFILE_METRICS, NodeProfile
 
 
 def _require_nonempty(result, message: str):
-    """Return result if non-empty, otherwise raise ValueError(message)."""
+    """Return result if non-empty, otherwise raise ValueError(message)"""
     if not result:
         raise ValueError(message)
     return result
@@ -13,7 +13,7 @@ def _require_nonempty(result, message: str):
 def _get_nodes(
     engine: PrometheusEngine, jobid: str, lookback_days: int
 ) -> tuple[list[str], Window]:
-    """Return the list of nodes and the job's time window from cgroup telemetry."""
+    """Return the list of nodes and the job's time window from cgroup telemetry"""
     results = engine.query_lookback(
         METRIC_REGISTRY["job_cgroup"], jobid=jobid, lookback_days=lookback_days
     )
@@ -32,7 +32,7 @@ def _get_nodes(
 def _process_node(
     engine: PrometheusEngine, node: str, jobid: str, window: Window
 ) -> NodeData:
-    """Detect node profile, fetch all metrics, and assemble a NodeData."""
+    """Detect node profile, fetch all metrics, and assemble a NodeData"""
     dram_results = engine.query_range(METRIC_REGISTRY["dram_power"], window, node=node)
     gpu_results = engine.query_range(
         METRIC_REGISTRY["gpu_power"], window, node=node, jobid=jobid
@@ -101,6 +101,6 @@ def _process_node(
 def process_job(
     engine: PrometheusEngine, jobid: str, lookback_days: int = LOOKBACK_DAYS
 ) -> list[NodeData]:
-    """Return one NodeData per node that ran the given Slurm job."""
+    """Return one NodeData per node that ran the given Slurm job"""
     nodes, window = _get_nodes(engine, jobid, lookback_days)
     return [_process_node(engine, node, jobid, window) for node in nodes]

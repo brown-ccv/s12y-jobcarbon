@@ -15,19 +15,19 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_output(jobid: str, args: Namespace, batch: bool) -> Path | None:
-    """Return the output file path for a job, or None to indicate stdout."""
+    """Return the output file path for a job, or None to indicate stdout"""
     if args.output:
         return Path(args.output)
     if args.output_dir:
         return Path(args.output_dir) / f"{jobid}.yml"
     if batch:
-        # Multiple job IDs, no --output-dir: write job<id>-carbon.imp in cwd.
+        # Multiple job IDs, no --output-dir: write job<id>-carbon.imp in cwd
         return Path(f"job{jobid}-carbon.imp")
     return None
 
 
 def _run_job(engine: PrometheusEngine, jobid: str, output: Path | None) -> None:
-    """Fetch telemetry for jobid and write the manifest to output path, or stdout if None."""
+    """Fetch telemetry for jobid and write the manifest to output path, or stdout if None"""
     node_data = process_job(engine, jobid)
     manifest = generate_manifest(jobid, node_data)
     content = dump(manifest)
@@ -40,7 +40,7 @@ def _run_job(engine: PrometheusEngine, jobid: str, output: Path | None) -> None:
 def _run_job_and_report(
     engine: PrometheusEngine, jobid: str, output: Path | None
 ) -> None:
-    """Run a job, logging success or failure to stderr."""
+    """Run a job, logging success or failure to stderr"""
     try:
         _run_job(engine, jobid, output)
         logger.info("%s ok", jobid)
@@ -49,7 +49,7 @@ def _run_job_and_report(
 
 
 def main():
-    """CLI entry point: generate IMP manifests for one or more Slurm jobs."""
+    """CLI entry point: generate IMP manifests for one or more Slurm jobs"""
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(message)s")
 
     parser = ArgumentParser(description="generate IMP manifests for Slurm jobs")

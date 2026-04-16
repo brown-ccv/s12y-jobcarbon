@@ -10,10 +10,10 @@ from registry import NodeProfile
 def _make_process_node_engine(
     dram=False, gpu=False, range_side_effect=None, instant_side_effect=None
 ):
-    """Return a mock engine configured for _process_node tests.
+    """Return a mock engine configured for _process_node tests
 
     Defaults return timeseries for all metrics except dram/gpu (controlled by flags)
-    and a scalar 8 for all instant queries. Pass overrides to test specific behaviours.
+    and a scalar 8 for all instant queries. Pass overrides to test specific behaviours
     """
     engine = MagicMock()
 
