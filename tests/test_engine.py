@@ -5,9 +5,7 @@ from engine import PrometheusEngine, Window
 from registry import MetricDefinition
 
 BASE_URL = "http://localhost:9999"
-
-METRIC = MetricDefinition(id="test", query="test_metric{{node='{node}'}}", unit="watts")
-
+METRIC = MetricDefinition(id="test", query="test_metric{{node='{node}'}}")
 PROM_ERROR = {
     "status": "error",
     "errorType": "bad_data",

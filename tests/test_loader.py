@@ -34,7 +34,7 @@ def _make_process_node_engine(
 
 def test_get_nodes_window_start_is_min_timestamp():
     engine = MagicMock()
-    engine.query.return_value = [
+    engine.query_lookback.return_value = [
         prom_series("node1:9306", [(1000, 1.0), (1060, 2.0)]),
         prom_series("node2:9306", [(900, 1.0), (1060, 2.0)]),
     ]
@@ -44,7 +44,7 @@ def test_get_nodes_window_start_is_min_timestamp():
 
 def test_get_nodes_window_end_is_max_timestamp():
     engine = MagicMock()
-    engine.query.return_value = [
+    engine.query_lookback.return_value = [
         prom_series("node1:9306", [(1000, 1.0), (1060, 2.0)]),
         prom_series("node2:9306", [(900, 1.0), (1120, 2.0)]),
     ]
@@ -54,7 +54,7 @@ def test_get_nodes_window_end_is_max_timestamp():
 
 def test_get_nodes_raises_when_empty():
     engine = MagicMock()
-    engine.query.return_value = []
+    engine.query_lookback.return_value = []
     with pytest.raises(ValueError):
         _get_nodes(engine, jobid="42", lookback_days=30)
 
@@ -91,7 +91,7 @@ def test_process_node_raises_when_capacity_query_empty(empty_metric):
 
 def test_process_job_returns_one_nodedata_per_node():
     engine = _make_process_node_engine()
-    engine.query.return_value = [
+    engine.query_lookback.return_value = [
         prom_series("node1:9306", [(1000, 1.0)]),
         prom_series("node2:9306", [(1000, 1.0)]),
     ]

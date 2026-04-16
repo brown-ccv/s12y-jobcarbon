@@ -7,7 +7,7 @@ from registry import NodeProfile
 class NodeData:
     node: str
     profile: NodeProfile
-    metrics: dict[str, list[dict]]
+    metrics: dict[str, list[dict[str, str]]]
     cpu_total: int
     mem_total: int
     cpu_allocated: int

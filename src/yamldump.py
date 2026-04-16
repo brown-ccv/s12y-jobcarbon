@@ -1,10 +1,13 @@
+from typing import Any
 import yaml
 
 
-class FixedDumper(yaml.Dumper):
+class IndentedListDumper(yaml.Dumper):
     def increase_indent(self, flow=False, indentless=False):
-        return super(FixedDumper, self).increase_indent(flow, False)
+        """Always indent list items, preventing PyYAML's default indentless block sequences."""
+        return super().increase_indent(flow, False)
 
 
-def dump(data):
-    return yaml.dump(data, Dumper=FixedDumper, default_flow_style=False)
+def dump(data: dict[Any, Any]) -> str:
+    """Serialize a manifest dict to a YAML string with indented list items."""
+    return yaml.dump(data, Dumper=IndentedListDumper, default_flow_style=False)
