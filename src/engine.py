@@ -1,5 +1,8 @@
+from __future__ import annotations
 import os
 from dataclasses import dataclass
+from math import ceil
+from itertools import chain
 
 import requests
 
@@ -12,8 +15,18 @@ LOOKBACK_DAYS = int(os.environ.get("JOBCARBON_LOOKBACK_DAYS", 30))
 
 @dataclass(frozen=True)
 class Window:
-    start: int  # unix timestamp
-    end: int  # unix timestamp
+    start: int  # unix timestamp in seconds
+    end: int  # unix timestamp in seconds
+
+    def chunk(window: Window, step_seconds: int = 60, max_samples: int = 10000) -> list[Window]:
+        chunks = []
+        cur_start = window.start
+        chunk_duration = (max_samples - 1) * step_seconds
+        while cur_start <= window.end:
+            cur_end = min(cur_start + chunk_duration, window.end)
+            chunks.append(Window(cur_start, cur_end))
+            cur_start = cur_end + step_seconds
+        return chunks
 
 
 class PrometheusEngine:
@@ -33,10 +46,10 @@ class PrometheusEngine:
             )
         return data["data"]["result"]
 
-    def query_range(
+    def _query_range_standard(
         self, metric: MetricDefinition, window: Window, node: str = "", jobid: str = ""
     ) -> list[dict]:
-        """Range query for a specific window of time"""
+        """Range query for jobs shorter than the max sample count"""
         query = metric.query.format(node=node, jobid=jobid)
         response = requests.get(
             f"{self.base_url}/api/v1/query_range",
@@ -48,6 +61,40 @@ class PrometheusEngine:
             },
         )
         return self._parse_response(response)
+
+    def _query_range_chunked(
+        self,
+        metric: MetricDefinition,
+        window: Window,
+        node: str = "",
+        jobid: str = "",
+        max_samples: int = 10000,
+    ) -> list[dict]:
+        """Range query for jobs beyond the max sample count"""
+        chunks = Window.chunk(window, self.step_seconds, max_samples)
+
+        return list(
+            chain.from_iterable(
+                [self._query_range_standard(metric, c, node, jobid) for c in chunks]
+            )
+        )
+
+    def query_range(
+        self,
+        metric: MetricDefinition,
+        window: Window,
+        node: str = "",
+        jobid: str = "",
+        max_samples: int = 10000,
+    ) -> list[dict]:
+        """Range query for a specific window of time"""
+        duration = window.end - window.start
+        needs_chunking = duration / self.step_seconds > max_samples
+
+        if needs_chunking:
+            return self._query_range_chunked(metric, window, node, jobid, max_samples)
+        else:
+            return self._query_range_standard(metric, window, node, jobid)
 
     def query_instant(
         self, metric: MetricDefinition, time: int, node: str = "", jobid: str = ""

@@ -9,23 +9,24 @@ class MetricDefinition:
 
 
 # Nodes without Scaphandre data are skipped — no estimation fallback
+# All power metrics are in kilowatts
+# All memory metrics are in GiB
 METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "cpu_power": MetricDefinition(
         id="cpu_power",
-        query="sum by (instance) (scaph_socket_power_microwatts{{instance=~'{node}:.*'}})",
+        query="sum by (instance) (scaph_socket_power_microwatts{{instance=~'{node}:.*'}}) / 1e9",
     ),
     "dram_power": MetricDefinition(
         id="dram_power",
-        query="sum by (instance) (scaph_domain_power_microwatts{{domain_name='dram',instance=~'{node}:.*'}})",
+        query="sum by (instance) (scaph_domain_power_microwatts{{domain_name='dram',instance=~'{node}:.*'}}) / 1e9",
     ),
     "host_power": MetricDefinition(
         id="host_power",
-        query="scaph_host_power_microwatts{{instance=~'{node}:.*'}}",
+        query="scaph_host_power_microwatts{{instance=~'{node}:.*'}} / 1e9",
     ),
     "gpu_power": MetricDefinition(
         id="gpu_power",
-        # Multiply by 1000 to convert milliwatts → microwatts, consistent with all other power metrics
-        query="sum by (instance) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}} * 1000)",
+        query="sum by (instance) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}} / 1e6)",
     ),
     "node_cpu_total": MetricDefinition(
         id="node_cpu_total",
@@ -33,7 +34,7 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     ),
     "node_mem_total": MetricDefinition(
         id="node_mem_total",
-        query="slurm_node_mem_total{{node='{node}'}}",
+        query="slurm_node_mem_total{{node='{node}'}} / 1024",
     ),
     "cgroup_window": MetricDefinition(
         id="cgroup_window",
@@ -50,7 +51,11 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     ),
     "cgroup_mem_total": MetricDefinition(
         id="cgroup_mem_total",
-        query="cgroup_memory_total_bytes{{instance=~'{node}:.*',jobid='{jobid}',step='',task=''}}",
+        query="cgroup_memory_total_bytes{{instance=~'{node}:.*',jobid='{jobid}',step='',task=''}} / 1024 / 1024 / 1024",
+    ),
+    "gpu_count": MetricDefinition(
+        id="gpu_count",
+        query="count(count by (minor_number) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}}))",
     ),
 }
 
@@ -68,3 +73,5 @@ PROFILE_METRICS: dict[NodeProfile, list[str]] = {
     NodeProfile.HOST_ONLY: ["host_power"],
     NodeProfile.HOST_ONLY_GPU: ["host_power", "gpu_power"],
 }
+
+GPU_PROFILES = {NodeProfile.FULL_GPU, NodeProfile.HOST_ONLY_GPU}

@@ -1,19 +1,27 @@
 from engine import LOOKBACK_DAYS, PrometheusEngine, Window
 from models import NodeData
-from registry import METRIC_REGISTRY, PROFILE_METRICS, NodeProfile
+from registry import GPU_PROFILES, METRIC_REGISTRY, PROFILE_METRICS, NodeProfile
 
 
 def _require_nonempty(result, message: str):
-    """Return result if non-empty, otherwise raise ValueError(message)"""
     if not result:
         raise ValueError(message)
     return result
 
 
+def _prom_float(result) -> float:
+    """Parse a Prometheus instant result value to float
+
+    Prometheus encodes all values as strings on the wire, and integer metrics
+    are sometimes represented as floats (e.g. "4.0"). This handles both cases
+    """
+    return float(result[0]["value"][1])
+
+
 def _get_nodes(
     engine: PrometheusEngine, jobid: str, lookback_days: int
 ) -> tuple[list[str], Window]:
-    """Return the list of nodes and the job's time window from cgroup telemetry"""
+    """Finds all nodes a job ran on and the time window in which the job ran"""
     results = engine.query_lookback(
         METRIC_REGISTRY["job_cgroup"], jobid=jobid, lookback_days=lookback_days
     )
@@ -32,7 +40,6 @@ def _get_nodes(
 def _process_node(
     engine: PrometheusEngine, node: str, jobid: str, window: Window
 ) -> NodeData:
-    """Detect node profile, fetch all metrics, and assemble a NodeData"""
     dram_results = engine.query_range(METRIC_REGISTRY["dram_power"], window, node=node)
     gpu_results = engine.query_range(
         METRIC_REGISTRY["gpu_power"], window, node=node, jobid=jobid
@@ -47,7 +54,7 @@ def _process_node(
     else:
         profile = NodeProfile.HOST_ONLY
 
-    metrics: dict[str, list[dict]] = {}
+    metrics = {}
     if dram_results:
         metrics["dram_power"] = dram_results
     if gpu_results:
@@ -58,34 +65,46 @@ def _process_node(
                 METRIC_REGISTRY[mid], window, node=node, jobid=jobid
             )
 
-    cpu_result = _require_nonempty(
-        engine.query_instant(METRIC_REGISTRY["node_cpu_total"], window.end, node=node),
-        f"no cpu capacity data for node {node}",
+    cpu_total = _prom_float(
+        _require_nonempty(
+            engine.query_instant(
+                METRIC_REGISTRY["node_cpu_total"], window.end, node=node
+            ),
+            f"no cpu capacity data for node {node}",
+        )
     )
-    mem_result = _require_nonempty(
-        engine.query_instant(METRIC_REGISTRY["node_mem_total"], window.end, node=node),
-        f"no memory capacity data for node {node}",
+    mem_total = _prom_float(
+        _require_nonempty(
+            engine.query_instant(
+                METRIC_REGISTRY["node_mem_total"], window.end, node=node
+            ),
+            f"no memory capacity data for node {node}",
+        )
     )
-    cpu_alloc_result = _require_nonempty(
-        engine.query_instant(
-            METRIC_REGISTRY["cgroup_cpus"], window.end, node=node, jobid=jobid
-        ),
-        f"no cpu allocation data for job {jobid} on node {node}",
+    cpu_allocated = _prom_float(
+        _require_nonempty(
+            engine.query_instant(
+                METRIC_REGISTRY["cgroup_cpus"], window.end, node=node, jobid=jobid
+            ),
+            f"no cpu allocation data for job {jobid} on node {node}",
+        )
     )
-    mem_alloc_result = _require_nonempty(
-        engine.query_instant(
-            METRIC_REGISTRY["cgroup_mem_total"], window.end, node=node, jobid=jobid
-        ),
-        f"no memory allocation data for job {jobid} on node {node}",
+    mem_allocated = _prom_float(
+        _require_nonempty(
+            engine.query_instant(
+                METRIC_REGISTRY["cgroup_mem_total"], window.end, node=node, jobid=jobid
+            ),
+            f"no memory allocation data for job {jobid} on node {node}",
+        )
     )
 
-    # NOTE(@broarr): Sometimes prometheus encodes ints as floats. Everything is
-    #   transmitted as a string; it's the wire format
-    # TODO(@broarr): Will this int(float()) cast introduce inaccuracies?
-    cpu_total = int(float(cpu_result[0]["value"][1]))
-    mem_total = int(float(mem_result[0]["value"][1])) * 1024 * 1024
-    cpu_allocated = int(float(cpu_alloc_result[0]["value"][1]))
-    mem_allocated = int(float(mem_alloc_result[0]["value"][1]))
+    gpu_count = 0
+    if profile in GPU_PROFILES:
+        gpu_count_result = engine.query_instant(
+            METRIC_REGISTRY["gpu_count"], window.end, node=node, jobid=jobid
+        )
+        if gpu_count_result:
+            gpu_count = _prom_float(gpu_count_result)
 
     return NodeData(
         node=node,
@@ -95,12 +114,13 @@ def _process_node(
         mem_total=mem_total,
         cpu_allocated=cpu_allocated,
         mem_allocated=mem_allocated,
+        gpu_count=gpu_count,
     )
 
 
 def process_job(
     engine: PrometheusEngine, jobid: str, lookback_days: int = LOOKBACK_DAYS
 ) -> list[NodeData]:
-    """Return one NodeData per node that ran the given Slurm job"""
+    """Return one NodeData per node that ran the given Slurm job."""
     nodes, window = _get_nodes(engine, jobid, lookback_days)
     return [_process_node(engine, node, jobid, window) for node in nodes]

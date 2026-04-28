@@ -12,6 +12,7 @@ class NodeData:
     mem_total: int
     cpu_allocated: int
     mem_allocated: int
+    gpu_count: int = 0
 
 
 @dataclass

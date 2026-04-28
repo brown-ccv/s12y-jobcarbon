@@ -10,7 +10,6 @@ aggregation:
   type: both
 pipeline:
   compute:
-    - host-microwatts-to-watts
     - cpu-share
     - mem-share
     - weight-cpu-share
@@ -18,21 +17,12 @@ pipeline:
     - reservation-share
     - scale-host-power
     - duration-to-hours
-    - watts-to-kw
     - calculate-energy
     - sci-o
-    - mem-bytes-to-gb
     - sci-m
     - sum-carbon
 initialize:
   plugins:
-    host-microwatts-to-watts:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: host_power
-        coefficient: "=1/1000000"
-        output-parameter: host_power_watts
 
     cpu-share:
       path: builtin
@@ -92,14 +82,6 @@ initialize:
         coefficient: "=1/3600"
         output-parameter: duration_hours
 
-    watts-to-kw:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: node_power_watts
-        coefficient: "=1/1000"
-        output-parameter: kilowatts
-
     calculate-energy:
       path: builtin
       method: Multiply
@@ -134,14 +116,6 @@ initialize:
               time: sum
               component: sum
 
-    mem-bytes-to-gb:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: mem_allocated
-        coefficient: "=1/1073741824"
-        output-parameter: memory_gb
-
     sci-m:
       path: builtin
       method: SciEmbodied
@@ -150,7 +124,7 @@ initialize:
         output-parameter: carbon_embodied
       mapping:
         vCPUs: cpu_allocated
-        memory: memory_gb
+        memory: mem_allocated
       parameter-metadata:
         outputs:
           carbon_embodied:

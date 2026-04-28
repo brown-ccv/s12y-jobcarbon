@@ -27,3 +27,10 @@ def test_query_instant_raises_on_error_status():
     engine = PrometheusEngine(BASE_URL)
     with pytest.raises(RuntimeError):
         engine.query_instant(METRIC, time=1000, node="node1")
+
+def test_window_chunking():
+    window = Window(1, 7)
+    chunks = Window.chunk(window, 1, 3)
+    assert chunks[0].start == 1 and chunks[0].end == 3
+    assert chunks[1].start == 4 and chunks[1].end == 6
+    assert chunks[2].start == 7 and chunks[2].end == 7

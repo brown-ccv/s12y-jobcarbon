@@ -10,8 +10,6 @@ aggregation:
   type: both
 pipeline:
   compute:
-    - host-microwatts-to-watts
-    - gpu-microwatts-to-watts
     - cpu-share
     - mem-share
     - weight-cpu-share
@@ -20,35 +18,17 @@ pipeline:
     - scale-host-power
     - sum-node-gpu-power
     - duration-to-hours
-    - watts-to-kw
     - calculate-energy
     - sci-o
-    - mem-bytes-to-gb
     - sci-m
     - gpu-yield-correct
     - gpu-chip-embodied
     - gpu-vram-embodied
-    - gpu-embodied-per-gpu-kg
-    - gpu-embodied-node-kg
-    - gpu-embodied-node-g
+    - gpu-embodied-per-gpu
+    - gpu-embodied-node
     - sum-carbon
 initialize:
   plugins:
-    host-microwatts-to-watts:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: host_power
-        coefficient: "=1/1000000"
-        output-parameter: host_power_watts
-
-    gpu-microwatts-to-watts:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: gpu_power
-        coefficient: "=1/1000000"
-        output-parameter: gpu_power_watts
 
     cpu-share:
       path: builtin
@@ -117,14 +97,6 @@ initialize:
         coefficient: "=1/3600"
         output-parameter: duration_hours
 
-    watts-to-kw:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: node_power_watts
-        coefficient: "=1/1000"
-        output-parameter: kilowatts
-
     calculate-energy:
       path: builtin
       method: Multiply
@@ -159,14 +131,6 @@ initialize:
               time: sum
               component: sum
 
-    mem-bytes-to-gb:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: mem_allocated
-        coefficient: "=1/1073741824"
-        output-parameter: memory_gb
-
     sci-m:
       path: builtin
       method: SciEmbodied
@@ -175,7 +139,7 @@ initialize:
         output-parameter: carbon_embodied
       mapping:
         vCPUs: cpu_allocated
-        memory: memory_gb
+        memory: mem_allocated
       parameter-metadata:
         outputs:
           carbon_embodied:
@@ -188,7 +152,7 @@ initialize:
     # GPU embodied carbon — estimated path (per-node scalar lookup + yield correction)
     # Sources: Boakes et al. IEDM 2023 (process scalars, yield-corrected at 90%),
     #          Li, Graif, Gupta NeurIPS 2024 (memory scalars)
-    # process_scalar_kgco2eq_per_cm2 and mem_scalar_kgco2eq_per_gb are injected into
+    # process_scalar_gco2eq_per_cm2 and mem_scalar_gco2eq_per_gb are injected into
     # defaults by the generator (resolved from process_nm and mem_type via gpu_config.py).
 
     gpu-yield-correct:
@@ -212,13 +176,13 @@ initialize:
       config:
         input-parameters:
           - die_area_cm2_yield_corrected
-          - process_scalar_kgco2eq_per_cm2
-        output-parameter: chip_embodied_kgco2eq
+          - process_scalar_gco2eq_per_cm2
+        output-parameter: chip_embodied_gco2eq
       parameter-metadata:
         outputs:
-          chip_embodied_kgco2eq:
+          chip_embodied_gco2eq:
             description: GPU chip manufacturing embodied carbon per GPU
-            unit: kgCO2eq
+            unit: gCO2eq
 
     gpu-vram-embodied:
       path: builtin
@@ -226,52 +190,39 @@ initialize:
       config:
         input-parameters:
           - vram_gb
-          - mem_scalar_kgco2eq_per_gb
-        output-parameter: vram_embodied_kgco2eq
+          - mem_scalar_gco2eq_per_gb
+        output-parameter: vram_embodied_gco2eq
       parameter-metadata:
         outputs:
-          vram_embodied_kgco2eq:
+          vram_embodied_gco2eq:
             description: GPU VRAM manufacturing embodied carbon per GPU
-            unit: kgCO2eq
+            unit: gCO2eq
 
-    gpu-embodied-per-gpu-kg:
+    gpu-embodied-per-gpu:
       path: builtin
       method: Sum
       config:
         input-parameters:
-          - chip_embodied_kgco2eq
-          - vram_embodied_kgco2eq
-        output-parameter: gpu_embodied_kgco2eq_per_gpu
+          - chip_embodied_gco2eq
+          - vram_embodied_gco2eq
+        output-parameter: gpu_embodied_gco2eq_per_gpu
       parameter-metadata:
         outputs:
-          gpu_embodied_kgco2eq_per_gpu:
+          gpu_embodied_gco2eq_per_gpu:
             description: Total GPU embodied carbon per GPU (chip + VRAM)
-            unit: kgCO2eq
+            unit: gCO2eq
 
-    gpu-embodied-node-kg:
+    gpu-embodied-node:
       path: builtin
       method: Multiply
       config:
         input-parameters:
-          - gpu_embodied_kgco2eq_per_gpu
+          - gpu_embodied_gco2eq_per_gpu
           - gpu_count
-        output-parameter: gpu_embodied_kgco2eq_node
+        output-parameter: gpu_embodied_gco2eq_node
       parameter-metadata:
         outputs:
-          gpu_embodied_kgco2eq_node:
-            description: Total GPU embodied carbon for all GPUs on this node
-            unit: kgCO2eq
-
-    gpu-embodied-node-g:
-      path: builtin
-      method: Coefficient
-      config:
-        input-parameter: gpu_embodied_kgco2eq_node
-        coefficient: 1000
-        output-parameter: gpu_embodied_gco2eq
-      parameter-metadata:
-        outputs:
-          gpu_embodied_gco2eq:
+          gpu_embodied_gco2eq_node:
             description: Total GPU embodied carbon for all GPUs on this node
             unit: gCO2eq
 
