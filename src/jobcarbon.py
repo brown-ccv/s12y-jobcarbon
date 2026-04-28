@@ -18,6 +18,134 @@ app = typer.Typer()
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
+# Hardware specs keyed by the GPU model string as reported by Slurm GRES.
+# die_area_cm2: GPU die area in cm² (sourced from public reverse-engineering analyses)
+# vram_gb:      Nominal VRAM capacity in GB
+# process_nm:   Lithography node in nm — used to look up process_scalar_kgco2eq_per_cm2
+#               via a per-node table in gpu_config.py derived from Boakes et al. IEDM 2023.
+#               Yield correction (÷ 0.9) is applied inside the IF pipeline, not here.
+# mem_type:     VRAM technology — used to resolve mem_scalar_kgco2eq_per_gb
+# pcf_gco2eq:   Manufacturer cradle-to-gate PCF/LCA in gCO2eq (omits regression fields)
+#
+# Samsung 8N note: GA102/GA107 GPUs use process_nm=8 (Samsung 8N). Samsung 8N is not
+#   covered by Boakes et al. (TSMC-specific). gpu_config.py maps process_nm=8 to the
+#   TSMC N7 scalar (2.29 kgCO2eq/cm² yield-corrected) as a conservative proxy, with
+#   a logged warning.
+#
+# Sources: TechPowerUp GPU Database, Chips and Cheese die analyses (die areas),
+#          Boakes et al. IEDM 2023 (process scalars),
+#          Li, Graif, Gupta NeurIPS 2024 workshop (memory scalars)
+KNOWN_GPU_SPECS: dict[str, dict] = {
+    # --- Turing — TSMC 12N (12nm) ---
+    "quadro_rtx_6000": {
+        "die_area_cm2": 7.54,   # TU102
+        "vram_gb": 24.0,
+        "process_nm": 12,
+        "mem_type": "gddr6",
+    },
+
+    # --- Ampere — Samsung 8N (8nm) ---
+    "nvidia_geforce_rtx_3090": {
+        "die_area_cm2": 6.28,   # GA102
+        "vram_gb": 24.0,
+        "process_nm": 8,
+        "mem_type": "gddr6",
+    },
+    "a5500": {
+        "die_area_cm2": 6.28,   # GA102
+        "vram_gb": 24.0,
+        "process_nm": 8,
+        "mem_type": "gddr6",
+    },
+    "nvidia_rtx_a5000": {
+        "die_area_cm2": 6.28,   # GA102
+        "vram_gb": 24.0,
+        "process_nm": 8,
+        "mem_type": "gddr6",
+    },
+    "nvidia_a40": {
+        "die_area_cm2": 6.28,   # GA102
+        "vram_gb": 48.0,
+        "process_nm": 8,
+        "mem_type": "gddr6",
+    },
+    "nvidia_rtx_a6000": {
+        "die_area_cm2": 6.28,   # GA102
+        "vram_gb": 48.0,
+        "process_nm": 8,
+        "mem_type": "gddr6",
+    },
+    "a6000": {                  # same hardware as nvidia_rtx_a6000 on Oscar
+        "die_area_cm2": 6.28,   # GA102
+        "vram_gb": 48.0,
+        "process_nm": 8,
+        "mem_type": "gddr6",
+    },
+    "a2": {
+        "die_area_cm2": 2.00,   # GA107; 200 mm² per Wikipedia/TechPowerUp
+        "vram_gb": 16.0,
+        "process_nm": 8,
+        "mem_type": "gddr6",
+    },
+
+    # --- Ampere — TSMC N7 (7nm) ---
+    # PCF from: More than Carbon: Cradle-to-Grave environmental impacts of
+    # GenAI training on the Nvidia A100 GPU. Manufacturing (cradle-to-gate)
+    # figure; per single GPU.
+    "a100": {
+        "pcf_gco2eq": 127_600.0,
+    },
+
+    # --- Ada Lovelace — TSMC N4 (4nm) ---
+    "l40": {
+        "die_area_cm2": 6.09,   # AD102; 609 mm² per Wikipedia/TechPowerUp
+        "vram_gb": 48.0,
+        "process_nm": 4,
+        "mem_type": "gddr6",
+    },
+    "l40s": {
+        "die_area_cm2": 6.09,   # AD102; 609 mm² per Wikipedia/TechPowerUp
+        "vram_gb": 48.0,
+        "process_nm": 4,
+        "mem_type": "gddr6",
+    },
+
+    # --- Hopper — TSMC N4 (4nm) ---
+    # PCF from: NVIDIA HGX H100 product carbon footprint document.
+    # System-level cradle-to-gate figure: 1,312 kgCO2eq / 8 GPUs per system
+    # = 164 kgCO2eq per GPU. Materials and components = 91% of full lifecycle.
+    "h100": {
+        "pcf_gco2eq": 164_000.0,
+    },
+    # No manufacturer PCF available for H100 NVL — uses regression path.
+    "nvidia_h100_nvl": {
+        "die_area_cm2": 8.14,   # GH100; same die as H100 SXM5
+        "vram_gb": 94.0,
+        "process_nm": 4,
+        "mem_type": "hbm2e",
+    },
+    "nvidia_gh200_480gb": {
+        "die_area_cm2": 8.14,   # GH100 GPU die (excludes Grace CPU die)
+        "vram_gb": 480.0,
+        "process_nm": 4,
+        "mem_type": "hbm3",
+    },
+
+    # --- Blackwell — TSMC N4P (4nm) ---
+    # PCF from: NVIDIA HGX B200 product carbon footprint document.
+    # System-level cradle-to-gate figure: 2,274 kgCO2eq / 8 GPUs per system
+    # = 284.25 kgCO2eq per GPU. Materials and components = 94% of full lifecycle.
+    "nvidia_b200": {
+        "pcf_gco2eq": 284_250.0,
+    },
+    "nvidia_rtx_pro_6000_blackwell_max-q": {
+        "die_area_cm2": 7.50,   # GB202; 750 mm² per Chips and Cheese Blackwell analysis
+        "vram_gb": 96.0,
+        "process_nm": 4,
+        "mem_type": "gddr6",    # GDDR7 — update mem_type when scalar is defined
+    },
+}
+
 
 def _run_job(engine: PrometheusEngine, jobid: str, output: Path | None) -> None:
     """Fetch telemetry for jobid and write the manifest to output path, or stdout if None"""
