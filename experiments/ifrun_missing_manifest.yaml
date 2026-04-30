@@ -1,0 +1,43 @@
+name: test-missing-samples
+description: Minimal manifest to test handling of null input parameters
+aggregation:
+  metrics:
+    - power
+  type: both
+initialize:
+  plugins:
+    sci-o:
+      path: builtin
+      method: Multiply
+      config:
+        input-parameters:
+          - grid_carbon_intensity
+          - power
+        output-parameter: carbon_operational
+      parameter-metadata:
+        outputs:
+          carbon_operational:
+            description: Operational carbon emissions
+            unit: gCO2eq
+            aggregation-method:
+              time: sum
+              component: sum
+pipeline:
+  compute:
+    - sci-o
+tree:
+  children:
+    nodeA:
+      defaults:
+        node: nodeA
+      inputs:
+        - timestamp: 1000
+          node: nodeA
+          duration: 60
+          power: 1.234
+          grid_carbon_intensity: 381
+        - timestamp: 1060
+          node: nodeA
+          duration: 60
+          power: null
+          grid_carbon_intensity: 381
