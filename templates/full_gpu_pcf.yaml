@@ -1,5 +1,5 @@
-name: ~
-description: ~
+name: test-template-full-gpu-pcf
+description: Generated test manifest from template
 aggregation:
   metrics:
     - duration
@@ -129,4 +129,11 @@ initialize:
 
 tree:
   children:
-    ~: ~
+    ~:
+      defaults:
+        grid_carbon_intensity: 381
+        duration: 60
+        cpu_power: 0
+        dram_power: 0
+        gpu_power: 0
+        host_power: 0
