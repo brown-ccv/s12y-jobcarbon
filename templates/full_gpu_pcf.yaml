@@ -1,3 +1,4 @@
+# See METHODOLOGY.md for the carbon estimation approach this pipeline implements.
 name: ~
 description: ~
 aggregation:
@@ -14,8 +15,11 @@ pipeline:
     - duration-to-hours
     - calculate-energy
     - sci-o
-    - sci-m
+    - server-embodied
     - gpu-embodied-pcf
+    - gpu-embodied-per-second
+    - gpu-embodied-time-scale
+    - sci-m
     - sum-carbon
 initialize:
   plugins:
@@ -25,10 +29,10 @@ initialize:
       method: Sum
       config:
         input-parameters:
-          - cpu_power_kw
-          - dram_power_kw
-          - gpu_power_kw
-        output-parameter: kilowatts
+          - cpu_power
+          - dram_power
+          - gpu_power
+        output-parameter: node_power_kw
 
     duration-to-hours:
       path: builtin
@@ -44,15 +48,15 @@ initialize:
       config:
         input-parameters:
           - duration_hours
-          - kilowatts
+          - node_power_kw
         output-parameter: power
       parameter-metadata:
         outputs:
           power:
-            description: Energy consumed per observation interval
             unit: kWh
+            description: Node energy consumed during the observation interval
             aggregation-method:
-              time: avg
+              time: sum
               component: sum
 
     sci-o:
@@ -66,48 +70,96 @@ initialize:
       parameter-metadata:
         outputs:
           carbon_operational:
-            description: Operational carbon emissions
             unit: gCO2eq
+            description: Operational carbon emissions from energy use
             aggregation-method:
               time: sum
               component: sum
 
-    sci-m:
+    server-embodied:
       path: builtin
       method: SciEmbodied
       config:
-        lifespan: 157680000
-        output-parameter: carbon_embodied
+        lifespan: "=cpu_lifespan_seconds*1"
+        output-parameter: server_embodied_carbon
       mapping:
-        vCPUs: cpu_count
-        memory: memory_gb
+        vCPUs: cpu_allocated
+        memory: mem_allocated
       parameter-metadata:
         outputs:
-          carbon_embodied:
-            description: CPU and server embodied carbon (GPU excluded; added separately)
+          server_embodied_carbon:
             unit: gCO2eq
+            description: Embodied carbon attributed to server hardware
             aggregation-method:
               time: sum
               component: sum
-
-    # GPU embodied carbon — PCF path
-    # pcf_gco2eq is the manufacturer cradle-to-gate figure per GPU (gCO2eq).
-    # Multiplied by gpu_count to obtain node-level embodied carbon.
 
     gpu-embodied-pcf:
       path: builtin
       method: Multiply
       config:
         input-parameters:
-          - pcf_gco2eq_per_gpu
+          - pcf_carbon_per_gpu
           - gpu_count
-        output-parameter: gpu_embodied_gco2eq
+        output-parameter: gpu_embodied_carbon_node
       parameter-metadata:
         outputs:
-          gpu_embodied_gco2eq:
-            description: >
-              GPU embodied carbon from manufacturer PCF, scaled to GPU count on this node
+          gpu_embodied_carbon_node:
             unit: gCO2eq
+            description: Total GPU embodied carbon for all GPUs on the node
+            aggregation-method:
+              time: copy
+              component: sum
+
+    gpu-embodied-per-second:
+      path: builtin
+      method: Coefficient
+      config:
+        input-parameter: gpu_embodied_carbon_node
+        coefficient: "=1/157680000"
+        output-parameter: gpu_embodied_carbon_per_second
+      parameter-metadata:
+        outputs:
+          gpu_embodied_carbon_per_second:
+            unit: gCO2eq/s
+            description: GPU embodied carbon amortised per second of lifespan
+            aggregation-method:
+              time: copy
+              component: sum
+
+    gpu-embodied-time-scale:
+      path: builtin
+      method: Multiply
+      config:
+        input-parameters:
+          - gpu_embodied_carbon_per_second
+          - duration
+        output-parameter: gpu_embodied_carbon
+      parameter-metadata:
+        outputs:
+          gpu_embodied_carbon:
+            unit: gCO2eq
+            description: GPU embodied carbon attributed to the observation duration
+            aggregation-method:
+              time: sum
+              component: sum
+
+    sci-m:
+      path: builtin
+      method: Sum
+      config:
+        input-parameters:
+          - server_embodied_carbon
+          - gpu_embodied_carbon
+        output-parameter: carbon_embodied
+      parameter-metadata:
+        outputs:
+          carbon_embodied:
+            unit: gCO2eq
+            description: Total embodied carbon for the observation interval
+            aggregation-method:
+              time: sum
+              component: sum
 
     sum-carbon:
       path: builtin
@@ -116,13 +168,12 @@ initialize:
         input-parameters:
           - carbon_operational
           - carbon_embodied
-          - gpu_embodied_gco2eq
         output-parameter: carbon
       parameter-metadata:
         outputs:
           carbon:
-            description: Total carbon emissions (operational + CPU/server embodied + GPU embodied)
             unit: gCO2eq
+            description: Total carbon emissions (operational + embodied)
             aggregation-method:
               time: sum
               component: sum

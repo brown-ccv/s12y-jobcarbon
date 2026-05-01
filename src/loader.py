@@ -110,11 +110,11 @@ def _process_node(
         node=node,
         profile=profile,
         metrics=metrics,
-        cpu_total=cpu_total,
-        mem_total=mem_total,
-        cpu_allocated=cpu_allocated,
-        mem_allocated=mem_allocated,
-        gpu_count=gpu_count,
+        cpu_total=int(cpu_total),
+        mem_total=int(mem_total),
+        cpu_allocated=int(cpu_allocated),
+        mem_allocated=int(mem_allocated),
+        gpu_count=int(gpu_count),
     )
 
 

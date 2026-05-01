@@ -1,3 +1,4 @@
+# See METHODOLOGY.md for the carbon estimation approach this pipeline implements.
 name: ~
 description: ~
 aggregation:
@@ -24,9 +25,9 @@ initialize:
       method: Sum
       config:
         input-parameters:
-          - cpu_power_kw
-          - dram_power_kw
-        output-parameter: kilowatts
+          - cpu_power
+          - dram_power
+        output-parameter: node_power_kw
 
     duration-to-hours:
       path: builtin
@@ -42,15 +43,15 @@ initialize:
       config:
         input-parameters:
           - duration_hours
-          - kilowatts
+          - node_power_kw
         output-parameter: power
       parameter-metadata:
         outputs:
           power:
-            description: Energy consumed per observation interval
             unit: kWh
+            description: Node energy consumed during the observation interval
             aggregation-method:
-              time: avg
+              time: sum
               component: sum
 
     sci-o:
@@ -64,8 +65,8 @@ initialize:
       parameter-metadata:
         outputs:
           carbon_operational:
-            description: Operational carbon emissions
             unit: gCO2eq
+            description: Operational carbon emissions from energy use
             aggregation-method:
               time: sum
               component: sum
@@ -74,16 +75,16 @@ initialize:
       path: builtin
       method: SciEmbodied
       config:
-        lifespan: 157680000
+        lifespan: "=cpu_lifespan_seconds*1"
         output-parameter: carbon_embodied
       mapping:
-        vCPUs: cpu_count
-        memory: memory_gb
+        vCPUs: cpu_allocated
+        memory: mem_allocated
       parameter-metadata:
         outputs:
           carbon_embodied:
-            description: Embodied carbon emissions
             unit: gCO2eq
+            description: Total embodied carbon for the observation interval
             aggregation-method:
               time: sum
               component: sum
@@ -99,8 +100,8 @@ initialize:
       parameter-metadata:
         outputs:
           carbon:
-            description: Total carbon emissions
             unit: gCO2eq
+            description: Total carbon emissions (operational + embodied)
             aggregation-method:
               time: sum
               component: sum

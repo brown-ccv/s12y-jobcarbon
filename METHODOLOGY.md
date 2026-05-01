@@ -43,7 +43,7 @@ power (kWh) = node_power_watts / 1000 * duration_s / 3600
 
 The output field is named `power` in the manifest with unit kWh per scrape interval
 
-**Aggregation:** `power` is declared with `aggregation-method: {time: avg, component: sum}` in the Impact Framework manifest `power` is an energy-per-interval value (a rate) metric; summing over timesteps would overcount when `if-run` aggregates across the job duration Components (nodes) are summed
+**Aggregation:** `power` is declared with `aggregation-method: {time: sum, component: sum}` in the Impact Framework manifest. Summing across timesteps gives the total energy consumed by the job on that node. Summing across components (nodes) gives the job-wide total. `carbon_operational` is derived per-timestep before aggregation, so there is no double-counting.
 
 ### Grid Carbon Intensity
 
@@ -67,10 +67,10 @@ reservation_share = 0.7 * (cpu_allocated / cpu_total)
 ```
 
 ```
-node_power_watts = host_power_watts × reservation_share
+node_power_kw = host_power × reservation_share
 ```
 
-where `cpu_allocated` and `cpu_total` are core counts, and `mem_allocated` and `mem_total` are both in bytes (so the ratio is dimensionless)
+where `cpu_allocated` and `cpu_total` are core counts, and `mem_allocated` and `mem_total` are both in GiB (so the ratio is dimensionless)
 
 **The 0.7/0.3 split is a placeholder**. It encodes a general prior that CPU activity is a larger driver of host power draw than memory activity. It has not been validated against measured data on Oscar's specific hardware. Any results derived from the `host_only` or `host_only_gpu` profiles should be interpreted with this limitation in mind
 
@@ -78,19 +78,21 @@ The correct approach — offline empirical characterization using nodes that hav
 
 ## 5. Embodied Carbon
 
-### CPU and Server Embodied Carbon
+### Server Embodied Carbon
 
-Embodied carbon is computed using the Impact Framework `SciEmbodied` plugin, which implements the [SCI-M equation][sci-m] from the SCI specification
+Embodied carbon for the server platform is computed using the Impact Framework `SciEmbodied` plugin, which implements the [SCI-M equation][sci-m] from the SCI specification. The output field is `server_embodied_carbon` in GPU-profile manifests and `carbon_embodied` in non-GPU manifests (where it is the only embodied term)
 
 **Inputs passed to the plugin:**
 
-| Input | Value | Source |
+| Plugin input | Manifest field | Description |
 |---|---|---|
 | `vCPUs` | `cpu_allocated` | Cores allocated to the job (from cgroup data) |
-| `memory` | `memory_gb` | Memory allocated to the job in GB (from cgroup data) |
-| `lifespan` | 157,680,000 seconds | 5 years; Oscar's hardware refresh cycle |
+| `memory` | `mem_allocated` | Memory allocated to the job in GiB (from cgroup data) |
+| `lifespan` | `cpu_lifespan_seconds` | 157,680,000 s (5 years); Oscar's hardware refresh cycle |
 
-**Attribution model:** `SciEmbodied` returns the embodied carbon of the whole server scaled to the job's allocated share of CPU and memory resources This follows the SCI specification's resource-share attribution approach
+**What `SciEmbodied` models:** the plugin estimates embodied carbon for the *entire server* — CPU, DRAM, chassis, PSU, and associated components — not the processor die alone. It then scales the result to the job's allocated share of vCPUs and memory. This is why the field is named `server_embodied_carbon`, not `cpu_embodied_carbon`
+
+**Per-timestep amortization:** `SciEmbodied` internally scales the server lifetime total by `duration / lifespan`, producing a per-observation-interval value. Summed over the full job, this equals the job's proportional share of the server's lifetime embodied carbon
 
 **Limitations:**
 
@@ -98,17 +100,23 @@ Embodied carbon is computed using the Impact Framework `SciEmbodied` plugin, whi
 
 ### GPU Embodied Carbon
 
-GPU embodied carbon is added to `carbon_embodied` separately from the CPU/server component, using one of two paths depending on whether an authoritative cradle-to-gate figure is available for the GPU model.
+GPU embodied carbon is computed separately from the server component and added to `carbon_embodied` via the `sci-m` pipeline step. All figures cover **manufacturing only (cradle-to-gate)**. Use-phase emissions are accounted for separately via `carbon_operational` (§3); using a full lifecycle figure here would double-count operational emissions.
 
-All figures cover **manufacturing only (cradle-to-gate)**. Use-phase emissions are accounted for separately via `carbon_operational` (§3); using a full lifecycle figure here would double-count operational emissions.
-
-The operative values are stored in `config/gpu_embodied.toml` and are subject to revision as better sources become available. The per-GPU values and sources documented here reflect the current state of that file.
+**Per-timestep amortization:** GPU embodied carbon is time-scaled using the same `duration / lifespan` approach as `SciEmbodied`. The pipeline divides the node-level lifetime total by `gpu_lifespan_seconds` (157,680,000 s) to obtain a per-second rate, then multiplies by `duration` to obtain the per-interval value. Summed over the full job, this equals the job's share of the GPUs' lifetime embodied carbon
 
 **GPU count** (`gpu_count`) is the number of GPUs assigned to the job on a given node, obtained at job load time by counting distinct `minor_number` label values in `nvidia_gpu_power_usage_milliwatts` for the job and node.
 
+The operative values are stored in `config/jobcarbon.toml` and are subject to revision as better sources become available. The per-GPU values and sources documented here reflect the current state of that file.
+
 #### Tier 1 — Manufacturer PCF / Third-Party LCA
 
-Where a cradle-to-gate figure from a manufacturer product carbon footprint (PCF) document or peer-reviewed lifecycle assessment (LCA) is available, it is used directly. The manifest pipeline multiplies the per-GPU figure by `gpu_count` to obtain the node-level embodied carbon.
+Where a cradle-to-gate figure from a manufacturer product carbon footprint (PCF) document or peer-reviewed lifecycle assessment (LCA) is available, it is used directly. The pipeline scales to this timestep as follows:
+
+```
+gpu_embodied_carbon_node      = pcf_carbon_per_gpu × gpu_count          # lifetime total, all GPUs
+gpu_embodied_carbon_per_second = gpu_embodied_carbon_node / gpu_lifespan_seconds
+gpu_embodied_carbon           = gpu_embodied_carbon_per_second × duration  # this timestep
+```
 
 | GPU model | gCO2eq per GPU | Derivation | Source |
 |---|---|---|---|
@@ -121,52 +129,56 @@ Where a cradle-to-gate figure from a manufacturer product carbon footprint (PCF)
 For GPU models without an authoritative cradle-to-gate figure, embodied carbon is estimated from GPU die area and VRAM capacity. The arithmetic is executed inside the Impact Framework pipeline so all intermediate values are visible in the manifest:
 
 ```
-die_area_cm2_yield_corrected  = die_area_cm2 × (1 / yield)
-chip_embodied_kgco2eq         = die_area_cm2_yield_corrected × process_scalar_kgco2eq_per_cm2
-vram_embodied_kgco2eq         = vram_gb × mem_scalar_kgco2eq_per_gb
-gpu_embodied_kgco2eq_per_gpu  = chip_embodied_kgco2eq + vram_embodied_kgco2eq
-gpu_embodied_kgco2eq_node     = gpu_embodied_kgco2eq_per_gpu × gpu_count
-gpu_embodied_gco2eq           = gpu_embodied_kgco2eq_node × 1000
+chip_embodied_carbon          = die_area_sq_cm × process_scalar_carbon_per_sq_cm   # per GPU, lifetime
+vram_embodied_carbon          = vram_gb × mem_scalar_carbon_per_gb                  # per GPU, lifetime
+gpu_embodied_carbon_per_gpu   = chip_embodied_carbon + vram_embodied_carbon
+gpu_embodied_carbon_node      = gpu_embodied_carbon_per_gpu × gpu_count             # all GPUs, lifetime
+gpu_embodied_carbon_per_second = gpu_embodied_carbon_node / gpu_lifespan_seconds
+gpu_embodied_carbon           = gpu_embodied_carbon_per_second × duration           # this timestep
 ```
+
+All intermediate carbon fields are in gCO2eq. `process_scalar_carbon_per_sq_cm` and `mem_scalar_carbon_per_gb` are injected into each node's `defaults` block by the generator, resolved from the GPU's `process` and `mem_type` fields in `config/jobcarbon.toml`
 
 **Yield correction**
 
 The paper figures below are per cm² of wafer area processed. A yield correction divides by the fraction of dies that are functional, allocating the full wafer carbon to good dies only. A **conservative yield of 90% (0.9)** is assumed. Boakes et al. ([IEEE IEDM 2023][boakes2023]) report that large GPU dies (e.g. GA102 at 628 mm²) have a peak yield of approximately 55%; smaller or older dies yield considerably higher. Using 90% understates the embodied carbon per good die for large dies — estimates derived from it should be read as lower bounds.
 
-**Manufacturing process scalar** (resolved from `process_nm` in `config/gpu_embodied.toml`):
+Yield correction is applied when computing `process_scalar_carbon_per_sq_cm` in `config.py` (i.e., `wafer_scalar / 0.9`). It is **not** a pipeline step in the manifest; the value injected into each node's `defaults` block is already yield-corrected.
+
+**Manufacturing process scalar** (resolved from `process` in `config/jobcarbon.toml`):
 
 Scalars are derived from per-process-node global warming potential (GWP) figures in Boakes et al., "Cradle-to-gate life cycle assessment of CMOS logic technologies," [IEEE IEDM 2023][boakes2023] (Table II). The paper covers TSMC nodes N28 through A14. Yield correction at 90% is applied on top of the wafer-level figures.
 
 When multiple EUV/non-EUV variants exist for the same nominal node, the lower (less carbon-intensive) figure is used as a conservative estimate.
 
-| `process_nm` | TSMC node | Wafer kgCO2eq/cm² (Boakes) | Yield-corrected scalar (÷ 0.9) |
+| `process_nm` | TSMC node | Wafer kgCO2eq/cm² (Boakes) | Yield-corrected `process_scalar_carbon_per_sq_cm` (gCO2eq/cm²) |
 |---|---|---|---|
-| 28 | N28 | 1.38 | 1.53 |
-| 20 | N20 | 1.47 | 1.63 |
-| 14 | N14 | 1.55 | 1.72 |
-| 10 | N10 | 1.78 | 1.98 |
-| 7 | N7 (non-EUV) / N7EUV lower | 2.06 | 2.29 |
-| 5 | N5 | 2.42 | 2.69 |
-| 4 | N3 (closest documented) | 2.74 | 3.04 |
-| 3 | N3 | 2.74 | 3.04 |
-| 2 | N2 | 2.73 | 3.03 |
+| 28 | N28 | 1.38 | 1533 |
+| 20 | N20 | 1.47 | 1633 |
+| 14 | N14 | 1.55 | 1722 |
+| 10 | N10 | 1.78 | 1978 |
+| 7 | N7 (non-EUV) / N7EUV lower | 2.06 | 2289 |
+| 5 | N5 | 2.42 | 2689 |
+| 4 | N3 (closest documented) | 2.74 | 3044 |
+| 3 | N3 | 2.74 | 3044 |
+| 2 | N2 | 2.73 | 3033 |
 
-**Samsung 8N exception:** GA102-based GPUs on Oscar (RTX 3090, A5000, A5500, A40, A6000 (Ampere), A2) are manufactured on Samsung 8N. Samsung 8N is not covered by Boakes et al., which is TSMC-specific. TSMC N7 (yield-corrected scalar 2.29 kgCO2eq/cm²) is used as a conservative proxy — Samsung 8N is a derivative of N10/N7-class lithography and N7 is the closest documented analogue in the conservative direction. These entries are flagged `process_nm: 8` in `config/gpu_embodied.toml`; `gpu_config.py` maps `8` → the N7 scalar with a logged warning.
+**Samsung 8N exception:** GA102-based GPUs on Oscar (RTX 3090, A5000, A5500, A40, A6000 (Ampere), A2) are manufactured on Samsung 8N. Samsung 8N is not covered by Boakes et al., which is TSMC-specific. TSMC N7 (yield-corrected scalar 2289 gCO2eq/cm²) is used as a conservative proxy — Samsung 8N is a derivative of N10/N7-class lithography and N7 is the closest documented analogue in the conservative direction. These entries are flagged `process: samsung-8n` in `config/jobcarbon.toml`; `config.py` maps `samsung-8n` → the N7 scalar with a logged warning.
 
-**Memory type scalar** (resolved from `mem_type` in `config/gpu_embodied.toml`):
+**Memory type scalar** (resolved from `mem_type` in `config/jobcarbon.toml`):
 
-| Memory type | `mem_scalar_kgco2eq_per_gb` |
+| Memory type | `mem_scalar_carbon_per_gb` (gCO2eq/GiB) |
 |---|---|
-| `gddr6` | 0.4 |
-| `hbm2` | 0.9 |
-| `hbm2e` | 0.9 |
-| `hbm3` | 0.9 |
+| `gddr6` | 400 |
+| `hbm2` | 900 |
+| `hbm2e` | 900 |
+| `hbm3` | 900 |
 
 HBM2 and HBM2e are treated as equal. Memory scalars from: Li, Graif, and Gupta, "Towards Carbon-efficient LLM Life Cycle," [HotCarbon 2024][hotcarbon2024] (Table 1). Values are taken from the paper as published; independent verification against primary manufacturer data has not been performed.
 
 **GPU models currently on the regression path** (no authoritative cradle-to-gate figure available):
 
-| GPU model (sinfo) | Die | Foundry / node | `die_area_cm2` | `vram_gb` | `process_nm` | `mem_type` | Process scalar note |
+| GPU model (sinfo) | Die | Foundry / node | `die_area_sq_cm` | `vram_gb` | `process` | `mem_type` | Process scalar note |
 |---|---|---|---|---|---|---|---|
 | `quadro_rtx_6000` | TU102 | TSMC 12N | 7.54 ([TechPowerUp][tpu-tu102]) | 24.0 | 12 | gddr6 | N14 proxy (closest) |
 | `nvidia_geforce_rtx_3090` | GA102 | Samsung 8N | 6.28 ([TechPowerUp][tpu-ga102]) | 24.0 | 8 | gddr6 | N7 proxy — Samsung 8N not in Boakes |
@@ -190,14 +202,16 @@ TSMC 12N (used by TU102) is marketed as a 12nm node but is architecturally close
 
 #### Failure Policy
 
-If a GPU-profile node has no entry in `config/gpu_embodied.toml`, manifest generation fails with a clear error. There is no silent fleet-average fallback.
+If a GPU-profile node has no entry in `config/jobcarbon.toml`, manifest generation fails with a clear error. There is no silent fleet-average fallback.
 
 ## 6. SCI Score
 
 The final score is:
 
 ```
-carbon (gCO2eq) = carbon_operational + carbon_embodied
+carbon_embodied (gCO2eq) = server_embodied_carbon + gpu_embodied_carbon   # GPU profiles
+carbon_embodied (gCO2eq) = server_embodied_carbon                         # non-GPU profiles
+carbon          (gCO2eq) = carbon_operational + carbon_embodied
 ```
 
 per job run (`R = 1`) This is the value reported in `tree.children.<node>.aggregated` in the `if-run` output, summed across all nodes in the job

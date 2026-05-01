@@ -28,6 +28,7 @@ def test_query_instant_raises_on_error_status():
     with pytest.raises(RuntimeError):
         engine.query_instant(METRIC, time=1000, node="node1")
 
+
 def test_window_chunking():
     window = Window(1, 7)
     chunks = Window.chunk(window, 1, 3)

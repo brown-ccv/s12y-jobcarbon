@@ -1,7 +1,7 @@
-import json
 import logging
 import os
 import re
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -243,9 +243,8 @@ class Config:
         config_path = path or Path(
             os.environ.get("JOBCARBON_CONFIG", _DEFAULT_CONFIG_PATH)
         )
-        with config_path.open() as f:
-            # json round-trip strips tomlkit proxy wrappers into plain Python types
-            raw = json.loads(json.dumps(tomlkit.load(f)))
+        with config_path.open("rb") as f:
+            raw = tomllib.load(f)
         gci = float(raw.get("grid_carbon_intensity", _DEFAULT_GRID_CARBON_INTENSITY))
         env_gci = os.environ.get("JOBCARBON_GRID_CARBON_INTENSITY")
         if env_gci is not None:
@@ -280,7 +279,7 @@ class Config:
             tomlkit.comment("See METHODOLOGY.md for field definitions and sources.")
         )
         doc.add(tomlkit.nl())
-        doc.add("grid_carbon_intensity", _DEFAULT_GRID_CARBON_INTENSITY)
+        doc.add("grid_carbon_intensity", tomlkit.item(_DEFAULT_GRID_CARBON_INTENSITY))
         doc.add(
             tomlkit.comment(
                 "gCO2eq/kWh — override with JOBCARBON_GRID_CARBON_INTENSITY"

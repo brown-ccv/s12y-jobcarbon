@@ -1,7 +1,6 @@
 from __future__ import annotations
 import os
 from dataclasses import dataclass
-from math import ceil
 from itertools import chain
 
 import requests
@@ -18,7 +17,10 @@ class Window:
     start: int  # unix timestamp in seconds
     end: int  # unix timestamp in seconds
 
-    def chunk(window: Window, step_seconds: int = 60, max_samples: int = 10000) -> list[Window]:
+    @staticmethod
+    def chunk(
+        window: Window, step_seconds: int = 60, max_samples: int = 10000
+    ) -> list[Window]:
         chunks = []
         cur_start = window.start
         chunk_duration = (max_samples - 1) * step_seconds

@@ -48,7 +48,7 @@ No build step required No type checker is configured
 -- **`synthesis.py` inner-joins all metric timeseries on timestamp** and raises `ValueError` on misaligned timestamps Missing metrics for a profile become `None` fields on `Observation`, not missing keys
 -- **`Observation` always contains all four power fields** (`cpu_power`, `dram_power`, `host_power`, `gpu_power`) regardless of profile; unused ones are `None` and appear in the manifest inputs as `null` `if-run` passes them through harmlessly
 -- **`mem_total` and `mem_allocated` are stored in GiB** — `slurm_node_mem_total` is reported by Slurm in MB; the PromQL query divides by 1024 to yield GiB `cgroup_mem_total` divides `cgroup_memory_total_bytes` by `1024 / 1024 / 1024` to also yield GiB Both fields are unit-consistent for the `mem-share` ratio and feed directly into `SciEmbodied` as `memory` (which expects GiB)
--- **`power` aggregation** — `calculate-energy` outputs a field named `power` (unit: kWh per observation interval) with `parameter-metadata` declaring `aggregation-method: {time: avg, component: sum}` Averaging over time is correct for a per-interval energy value (i e a rate); summing would overcount The `sci-o` plugin multiplies `grid_carbon_intensity × power`
+-- **`power` aggregation** — `calculate-energy` outputs a field named `power` (unit: kWh per observation interval) with `parameter-metadata` declaring `aggregation-method: {time: sum, component: sum}` Summing over time gives total job energy on that node; `carbon_operational` is derived per-timestep before aggregation so there is no double-counting
 -- **`GRID_CARBON_INTENSITY = 381`** (gCO2eq/kWh, RI grid) is hardcoded in both `jobcarbon.py` and `batch.py`, not read from config
 
 ## Testing

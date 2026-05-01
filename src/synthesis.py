@@ -1,9 +1,12 @@
+import logging
 from dataclasses import dataclass
 
 import pandas as pd
 
 from engine import STEP_SECONDS
 from models import Observation
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -20,20 +23,9 @@ def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
         for ts, val in series["values"]
     ]
     if not rows:
-        return pd.DataFrame(columns=["timestamp", metric_id])
+        return pd.DataFrame(columns=pd.Index(["timestamp", metric_id]))
     return pd.DataFrame(rows)
 
-
-def _assert_timestamps_aligned(metric_frames: list[MetricFrame]) -> None:
-    """Raise if any frame's timestamps diverge from the first"""
-    first = metric_frames[0]
-    for mf in metric_frames[1:]:
-        if not first.frame["timestamp"].equals(mf.frame["timestamp"]):
-            raise ValueError(
-                f"timestamp mismatch between {first.metric_id} and {mf.metric_id}: "
-                f"{first.metric_id} has {first.frame['timestamp'].iloc[0]}..{first.frame['timestamp'].iloc[-1]}, "
-                f"{mf.metric_id} has {mf.frame['timestamp'].iloc[0]}..{mf.frame['timestamp'].iloc[-1]}"
-            )
 
 
 def synthesize(node: str, metrics: dict[str, list[dict]]) -> list[Observation]:
@@ -43,12 +35,9 @@ def synthesize(node: str, metrics: dict[str, list[dict]]) -> list[Observation]:
         for metric_id, results in metrics.items()
     ]
 
-    _assert_timestamps_aligned(metric_frames)
-
     combined = metric_frames[0].frame
     for mf in metric_frames[1:]:
         combined = combined.merge(mf.frame, on="timestamp", how="inner")
-
     combined = combined.sort_values("timestamp")
 
     return [

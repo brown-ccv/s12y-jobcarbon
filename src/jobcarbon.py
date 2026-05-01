@@ -7,7 +7,7 @@ from typing import Annotated
 import requests
 import typer
 
-from config import Config
+from jobconfig import Config
 from engine import PrometheusEngine
 from generator import generate_manifest
 from loader import process_job
@@ -76,7 +76,7 @@ def batch(
 
 
 @app.command()
-def main(
+def run(
     job_id: Annotated[str, typer.Argument(help="Slurm job id")],
     output: Annotated[
         str | None, typer.Option(help="output file for manifest (default: stdout)")

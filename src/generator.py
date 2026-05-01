@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from config import Config, PROCESS_SCALARS, MEM_SCALARS
+from jobconfig import Config, PROCESS_SCALARS, MEM_SCALARS
 from models import NodeData
 from registry import GPU_PROFILES
 from synthesis import synthesize
@@ -27,8 +27,8 @@ def _template_name(node_data: NodeData, config: Config) -> str:
     return f"{node_data.profile.value}{suffix}"
 
 
-def _load_template(node_data: NodeData, gpu_config: dict) -> dict:
-    name = _template_name(node_data, gpu_config)
+def _load_template(node_data: NodeData, config: Config) -> dict:
+    name = _template_name(node_data, config)
     with (TEMPLATES_DIR / f"{name}.yaml").open() as f:
         return yaml.safe_load(f)
 
@@ -41,7 +41,7 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
     if "pcf_gco2eq" in entry:
         return {
             "gpu_count": node_data.gpu_count,
-            "pcf_gco2eq": float(entry["pcf_gco2eq"]),
+            "pcf_carbon_per_gpu": float(entry["pcf_gco2eq"]),
         }
     process = entry["process"]
     mem_type = entry["mem_type"]
@@ -60,10 +60,10 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
         )
     return {
         "gpu_count": node_data.gpu_count,
-        "die_area_cm2": float(entry["die_area_cm2"]),
+        "die_area_sq_cm": float(entry["die_area_cm2"]),
         "vram_gb": float(entry["vram_gb"]),
-        "process_scalar_gco2eq_per_cm2": PROCESS_SCALARS[process],
-        "mem_scalar_gco2eq_per_gb": MEM_SCALARS[mem_type],
+        "process_scalar_carbon_per_sq_cm": PROCESS_SCALARS[process],
+        "mem_scalar_carbon_per_gb": MEM_SCALARS[mem_type],
     }
 
 
@@ -77,13 +77,18 @@ def _build_node(
         "pipeline": template["pipeline"],
         "defaults": {
             "grid_carbon_intensity": config.grid_carbon_intensity,
+            "cpu_lifespan_seconds": 157680000,
+            "gpu_lifespan_seconds": 157680000,
             "cpu_total": node_data.cpu_total,
             "mem_total": node_data.mem_total,
             "cpu_allocated": node_data.cpu_allocated,
             "mem_allocated": node_data.mem_allocated,
             **_gpu_defaults(node_data, config),
         },
-        "inputs": [dataclasses.asdict(obs) for obs in observations],
+        "inputs": [
+            {k: v for k, v in dataclasses.asdict(obs).items() if v is not None}
+            for obs in observations
+        ],
     }
 
 
@@ -100,10 +105,11 @@ def generate_manifest(
     templates = {nd.node: _load_template(nd, config) for nd in node_data}
 
     all_plugins = {}
-    for tmpl in templates.values():
-        for name, defn in tmpl["initialize"]["plugins"].items():
-            all_plugins[name] = defn
+    for template in templates.values():
+        for name, definition in template["initialize"]["plugins"].items():
+            all_plugins[name] = definition
 
+    # NOTE(@broarr): Templates have the same aggregations, this grabs the first
     aggregation = next(iter(templates.values()))["aggregation"]
 
     return {
