@@ -4,9 +4,9 @@ This document describes the carbon estimation methodology used by `jobcarbon`
 
 ## 1. Purpose and Scope
 
-`jobcarbon` implements the [Software Carbon Intensity (SCI) specification][sci-spec] defined by the Green Software Foundation. SCI is a *comparison* metric, not an absolute carbon accounting tool. The value is in comparing jobs against each other (e.g. algorithm variants, different resource requests, different scheduling times) on a common, reproducible scale. It does not claim to represent the precise real-world carbon footprint of the job
+`jobcarbon` produces per-job carbon estimates in the [Impact Framework (IMP)][if-spec] manifest format defined by the Green Software Foundation. The value is in comparing jobs against each other (e.g. algorithm variants, different resource requests, different scheduling times) on a common, reproducible scale. It does not claim to represent the precise real-world carbon footprint of the job
 
-**Scope:** operational energy (direct compute power draw) and embodied carbon of compute hardware (manufacture and end-of-life, amortized over hardware lifetime)
+**Scope:** operational energy (direct compute power draw) and, optionally with `--embodied`, embodied carbon of compute hardware (manufacture and end-of-life, amortized over hardware lifetime)
 
 The following are **explicitly out of scope**:
 - Network I/O operational and embodied carbon
@@ -76,11 +76,13 @@ where `cpu_allocated` and `cpu_total` are core counts, and `mem_allocated` and `
 
 The correct approach — offline empirical characterization using nodes that have both `host_power` and component-level Scaphandre data — is planned See `FUTURE.md §2`
 
-## 5. Embodied Carbon
+## 5. Embodied Carbon (`--embodied`)
+
+Embodied carbon estimation is opt-in via the `--embodied` flag. When not specified, `carbon_operational` is the terminal output and no embodied steps are run.
 
 ### Server Embodied Carbon
 
-Embodied carbon for the server platform is computed using the Impact Framework `SciEmbodied` plugin, which implements the [SCI-M equation][sci-m] from the SCI specification. The output field is `server_embodied_carbon` in GPU-profile manifests and `carbon_embodied` in non-GPU manifests (where it is the only embodied term)
+Embodied carbon for the server platform is computed using the Impact Framework `SciEmbodied` plugin. The output field is `server_embodied_carbon`, which is then summed into `carbon_embodied`.
 
 **Inputs passed to the plugin:**
 
@@ -88,9 +90,9 @@ Embodied carbon for the server platform is computed using the Impact Framework `
 |---|---|---|
 | `vCPUs` | `cpu_allocated` | Cores allocated to the job (from cgroup data) |
 | `memory` | `mem_allocated` | Memory allocated to the job in GiB (from cgroup data) |
-| `lifespan` | `cpu_lifespan_seconds` | 157,680,000 s (5 years); Oscar's hardware refresh cycle |
+| `lifespan` | `cpu_lifespan_seconds` | Server amortisation period; default 5 years, configurable via `cpu_lifespan_years` in `jobcarbon.toml` or `JOBCARBON_CPU_LIFESPAN_YEARS` |
 
-**What `SciEmbodied` models:** the plugin estimates embodied carbon for the *entire server* — CPU, DRAM, chassis, PSU, and associated components — not the processor die alone. It then scales the result to the job's allocated share of vCPUs and memory. This is why the field is named `server_embodied_carbon`, not `cpu_embodied_carbon`
+**What `SciEmbodied` models:** the plugin estimates embodied carbon for the *entire server* — CPU, DRAM, chassis, PSU, and associated components — not the processor die alone. It then scales the result to the job's allocated share of vCPUs and memory.
 
 **Per-timestep amortization:** `SciEmbodied` internally scales the server lifetime total by `duration / lifespan`, producing a per-observation-interval value. Summed over the full job, this equals the job's proportional share of the server's lifetime embodied carbon
 
@@ -100,9 +102,9 @@ Embodied carbon for the server platform is computed using the Impact Framework `
 
 ### GPU Embodied Carbon
 
-GPU embodied carbon is computed separately from the server component and added to `carbon_embodied` via the `sci-m` pipeline step. All figures cover **manufacturing only (cradle-to-gate)**. Use-phase emissions are accounted for separately via `carbon_operational` (§3); using a full lifecycle figure here would double-count operational emissions.
+GPU embodied carbon is computed separately from the server component and added to `carbon_embodied` via the `sum-embodied-gpu` pipeline step. All figures cover **manufacturing only (cradle-to-gate)**. Use-phase emissions are accounted for separately via `carbon_operational` (§3); using a full lifecycle figure here would double-count operational emissions.
 
-**Per-timestep amortization:** GPU embodied carbon is time-scaled using the same `duration / lifespan` approach as `SciEmbodied`. The pipeline divides the node-level lifetime total by `gpu_lifespan_seconds` (157,680,000 s) to obtain a per-second rate, then multiplies by `duration` to obtain the per-interval value. Summed over the full job, this equals the job's share of the GPUs' lifetime embodied carbon
+**Per-timestep amortization:** GPU embodied carbon is time-scaled using the same `duration / lifespan` approach as the server. The pipeline divides the node-level lifetime total by `gpu_lifespan_seconds` to obtain a per-second rate, then multiplies by `duration` to obtain the per-interval value. The GPU lifespan defaults to 5 years and is configurable via `gpu_lifespan_years` in `jobcarbon.toml` or `JOBCARBON_GPU_LIFESPAN_YEARS`.
 
 **GPU count** (`gpu_count`) is the number of GPUs assigned to the job on a given node, obtained at job load time by counting distinct `minor_number` label values in `nvidia_gpu_power_usage_milliwatts` for the job and node.
 
@@ -204,22 +206,27 @@ TSMC 12N (used by TU102) is marketed as a 12nm node but is architecturally close
 
 If a GPU-profile node has no entry in `config/jobcarbon.toml`, manifest generation fails with a clear error. There is no silent fleet-average fallback.
 
-## 6. SCI Score
+## 6. Output
 
-The final score is:
+The terminal output field depends on whether `--embodied` is used:
 
+**Operational only (default):**
+```
+carbon_operational (gCO2eq)   — per node, per timestep; aggregates to job total
+```
+
+**With `--embodied`:**
 ```
 carbon_embodied (gCO2eq) = server_embodied_carbon + gpu_embodied_carbon   # GPU profiles
 carbon_embodied (gCO2eq) = server_embodied_carbon                         # non-GPU profiles
 carbon          (gCO2eq) = carbon_operational + carbon_embodied
 ```
 
-per job run (`R = 1`) This is the value reported in `tree.children.<node>.aggregated` in the `if-run` output, summed across all nodes in the job
+Both are reported in `tree.children.<node>.aggregated` in the `if-run` output, summed across all nodes in the job
 
-No normalization denominator is applied beyond `R = 1` For cross-job comparison on a per-resource-unit basis (e g per GPU-hour, per unit of scientific output), users should apply normalization externally
+No normalization denominator is applied. For cross-job comparison on a per-resource-unit basis (e.g. per GPU-hour, per unit of scientific output), users should apply normalization externally
 
-[sci-spec]: https://sci-guide.greensoftware.foundation/
-[sci-m]: https://sci-guide.greensoftware.foundation/M
+[if-spec]: https://if.greensoftware.foundation/
 [egrid2022]: https://www.epa.gov/egrid/detailed-data
 [a100-lca]: https://arxiv.org/abs/2509.00093
 [h100-pcf]: https://images.nvidia.com/aem-dam/Solutions/documents/HGX-H100-PCF-Summary.pdf

@@ -1,0 +1,7 @@
+path: builtin
+method: Sum
+config:
+  input-parameters:
+    - weighted_cpu_share
+    - weighted_mem_share
+  output-parameter: reservation_share

@@ -1,0 +1,6 @@
+path: builtin
+method: Divide
+config:
+  numerator: cpu_allocated
+  denominator: cpu_total
+  output: cpu_share

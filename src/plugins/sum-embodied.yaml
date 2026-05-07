@@ -1,0 +1,14 @@
+path: builtin
+method: Sum
+config:
+  input-parameters:
+    - server_embodied_carbon
+  output-parameter: carbon_embodied
+parameter-metadata:
+  outputs:
+    carbon_embodied:
+      unit: gCO2eq
+      description: Total embodied carbon for the observation interval
+      aggregation-method:
+        time: sum
+        component: sum

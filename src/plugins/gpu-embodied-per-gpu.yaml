@@ -1,0 +1,7 @@
+path: builtin
+method: Sum
+config:
+  input-parameters:
+    - chip_embodied_carbon
+    - vram_embodied_carbon
+  output-parameter: gpu_embodied_carbon_per_gpu

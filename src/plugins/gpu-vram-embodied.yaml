@@ -1,0 +1,7 @@
+path: builtin
+method: Multiply
+config:
+  input-parameters:
+    - vram_gb
+    - mem_scalar_carbon_per_gb
+  output-parameter: vram_embodied_carbon

@@ -1,0 +1,7 @@
+path: builtin
+method: Sum
+config:
+  input-parameters:
+    - scaled_host_power_kw
+    - gpu_power
+  output-parameter: node_power_kw

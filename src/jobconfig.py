@@ -233,23 +233,49 @@ def _build_node_map(entries: list[dict]) -> dict[str, dict]:
     return node_map
 
 
+_DEFAULT_CPU_LIFESPAN_YEARS = 5
+_DEFAULT_GPU_LIFESPAN_YEARS = 5
+
+
+def _years_to_seconds(years: int) -> int:
+    """Convert a lifespan in years to whole seconds, using 365 days/year."""
+    return years * 365 * 24 * 3600
+
+
 @dataclass(frozen=True)
 class Config:
     grid_carbon_intensity: float
+    cpu_lifespan_seconds: int
+    gpu_lifespan_seconds: int
     _node_map: dict[str, dict] = field(repr=False)
+    embodied: bool = False
 
     @classmethod
-    def load(cls, path: Path | None = None) -> "Config":
-        """Load jobcarbon.toml; JOBCARBON_GRID_CARBON_INTENSITY overrides the file value."""
+    def load(cls, path: Path | None = None, embodied: bool = False) -> "Config":
+        """Load jobcarbon.toml; env vars override file values.
+
+        JOBCARBON_GRID_CARBON_INTENSITY — gCO2eq/kWh
+        JOBCARBON_CPU_LIFESPAN_YEARS    — server amortisation period
+        JOBCARBON_GPU_LIFESPAN_YEARS    — GPU amortisation period
+        """
         config_path = path if path is not None else get_config_file()
         with config_path.open("rb") as f:
             raw = tomllib.load(f)
         gci = float(raw.get("grid_carbon_intensity", _DEFAULT_GRID_CARBON_INTENSITY))
-        env_gci = os.environ.get("JOBCARBON_GRID_CARBON_INTENSITY")
-        if env_gci is not None:
-            gci = float(env_gci)
+        if (env := os.environ.get("JOBCARBON_GRID_CARBON_INTENSITY")) is not None:
+            gci = float(env)
+        cpu_years = int(raw.get("cpu_lifespan_years", _DEFAULT_CPU_LIFESPAN_YEARS))
+        if (env := os.environ.get("JOBCARBON_CPU_LIFESPAN_YEARS")) is not None:
+            cpu_years = int(env)
+        gpu_years = int(raw.get("gpu_lifespan_years", _DEFAULT_GPU_LIFESPAN_YEARS))
+        if (env := os.environ.get("JOBCARBON_GPU_LIFESPAN_YEARS")) is not None:
+            gpu_years = int(env)
         return cls(
-            grid_carbon_intensity=gci, _node_map=_build_node_map(raw.get("gpus", []))
+            grid_carbon_intensity=gci,
+            cpu_lifespan_seconds=_years_to_seconds(cpu_years),
+            gpu_lifespan_seconds=_years_to_seconds(gpu_years),
+            _node_map=_build_node_map(raw.get("gpus", [])),
+            embodied=embodied,
         )
 
     def gpu_for_node(self, node: str) -> dict | None:

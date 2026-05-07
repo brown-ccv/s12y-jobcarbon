@@ -1,0 +1,15 @@
+path: builtin
+method: Sum
+config:
+  input-parameters:
+    - carbon_operational
+    - carbon_embodied
+  output-parameter: carbon
+parameter-metadata:
+  outputs:
+    carbon:
+      unit: gCO2eq
+      description: Total carbon emissions (operational + embodied)
+      aggregation-method:
+        time: sum
+        component: sum

@@ -57,6 +57,9 @@ def batch(
         str | None,
         typer.Option(help="output directory for manifest files (default: ./)"),
     ] = None,
+    embodied: Annotated[
+        bool, typer.Option("--embodied", help="include embodied carbon estimate")
+    ] = False,
 ) -> None:
     """Generate multiple manifests in one pass"""
     output_path = Path.cwd()
@@ -64,7 +67,7 @@ def batch(
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-    config = Config.load()
+    config = Config.load(embodied=embodied)
     engine = PrometheusEngine()
 
     for job_id in job_ids:
@@ -81,9 +84,12 @@ def run(
     output: Annotated[
         str | None, typer.Option(help="output file for manifest (default: stdout)")
     ] = None,
+    embodied: Annotated[
+        bool, typer.Option("--embodied", help="include embodied carbon estimate")
+    ] = False,
 ) -> None:
     """Generate an IF manifest for a Slurm job"""
-    config = Config.load()
+    config = Config.load(embodied=embodied)
     engine = PrometheusEngine()
     output_path = Path.cwd() / output if output else None
     _run_job(engine, job_id, output_path, config)

@@ -1,0 +1,6 @@
+path: builtin
+method: Coefficient
+config:
+  input-parameter: duration
+  coefficient: "=1/3600"
+  output-parameter: duration_hours

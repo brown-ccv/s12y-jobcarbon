@@ -1,0 +1,7 @@
+path: builtin
+method: Multiply
+config:
+  input-parameters:
+    - die_area_sq_cm
+    - process_scalar_carbon_per_sq_cm
+  output-parameter: chip_embodied_carbon

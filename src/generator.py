@@ -6,41 +6,132 @@ import yaml
 
 from jobconfig import Config, PROCESS_SCALARS, MEM_SCALARS
 from models import NodeData
-from registry import GPU_PROFILES
+from registry import GPU_PROFILES, NodeProfile
 from synthesis import synthesize
-from utils import get_template_dir
 
 logger = logging.getLogger(__name__)
 
 
-def _template_name(node_data: NodeData, config: Config) -> str:
+def _get_plugin_dir() -> Path:
+    """Return the path to the plugins directory."""
+    return Path(__file__).parent / "plugins"
+
+
+def _load_plugin(name: str) -> dict:
+    """Load and parse a single plugin YAML file by step name."""
+    with (_get_plugin_dir() / f"{name}.yaml").open() as f:
+        return yaml.safe_load(f)
+
+
+_OPERATIONAL_STEPS = {
+    NodeProfile.FULL: [
+        "sum-scaph-power",
+        "duration-to-hours",
+        "calculate-energy",
+        "calculate-carbon-operational",
+    ],
+    NodeProfile.FULL_GPU: [
+        "sum-scaph-gpu-power",
+        "duration-to-hours",
+        "calculate-energy",
+        "calculate-carbon-operational",
+    ],
+    NodeProfile.HOST_ONLY: [
+        "cpu-share",
+        "mem-share",
+        "weight-cpu-share",
+        "weight-mem-share",
+        "reservation-share",
+        "scale-host-power",
+        "duration-to-hours",
+        "calculate-energy",
+        "calculate-carbon-operational",
+    ],
+    NodeProfile.HOST_ONLY_GPU: [
+        "cpu-share",
+        "mem-share",
+        "weight-cpu-share",
+        "weight-mem-share",
+        "reservation-share",
+        "scale-host-power-gpu",
+        "sum-node-gpu-power",
+        "duration-to-hours",
+        "calculate-energy",
+        "calculate-carbon-operational",
+    ],
+}
+
+_EMBODIED_STEPS_SERVER_ONLY = [
+    "server-embodied",
+    "sum-embodied",
+    "sum-carbon",
+]
+
+_EMBODIED_STEPS_GPU_PCF = [
+    "server-embodied",
+    "gpu-embodied-pcf",
+    "gpu-embodied-per-second",
+    "gpu-embodied-time-scale",
+    "sum-embodied-gpu",
+    "sum-carbon",
+]
+
+_EMBODIED_STEPS_GPU_ESTIMATED = [
+    "server-embodied",
+    "gpu-chip-embodied",
+    "gpu-vram-embodied",
+    "gpu-embodied-per-gpu",
+    "gpu-embodied-total",
+    "gpu-embodied-per-second",
+    "gpu-embodied-time-scale",
+    "sum-embodied-gpu",
+    "sum-carbon",
+]
+
+_AGGREGATION_OPERATIONAL = {
+    "metrics": ["duration", "power", "carbon_operational"],
+    "type": "both",
+}
+
+_AGGREGATION_EMBODIED = {
+    "metrics": ["duration", "power", "carbon_operational", "carbon_embodied", "carbon"],
+    "type": "both",
+}
+
+
+def _embodied_steps(node_data: NodeData, config: Config) -> list[str]:
+    """Return the ordered embodied pipeline steps for this node's profile."""
     if node_data.profile not in GPU_PROFILES:
-        return node_data.profile.value
+        return _EMBODIED_STEPS_SERVER_ONLY
     entry = config.gpu_for_node(node_data.node)
     if entry is None:
         raise ValueError(
             f"node '{node_data.node}' has a GPU profile but is not in gpu_config; "
             "re-run create-config and add it to jobcarbon.toml"
         )
-    suffix = "_pcf" if "pcf_gco2eq" in entry else "_estimated"
-    return f"{node_data.profile.value}{suffix}"
+    if "pcf_gco2eq" in entry:
+        return _EMBODIED_STEPS_GPU_PCF
+    return _EMBODIED_STEPS_GPU_ESTIMATED
 
 
-def _load_template(node_data: NodeData, config: Config) -> dict:
-    name = _template_name(node_data, config)
-    with (get_template_dir() / f"{name}.yaml").open() as f:
-        return yaml.safe_load(f)
+def _pipeline_steps(node_data: NodeData, config: Config) -> list[str]:
+    """Return the full ordered pipeline step list for this node."""
+    steps = list(_OPERATIONAL_STEPS[node_data.profile])
+    if config.embodied:
+        steps.extend(_embodied_steps(node_data, config))
+    return steps
 
 
 def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
+    """Return embodied GPU defaults to inject into the node defaults block."""
     if node_data.profile not in GPU_PROFILES:
         return {}
     entry = config.gpu_for_node(node_data.node)
-    assert entry is not None  # already verified by _template_name
+    assert entry is not None  # already verified by _embodied_steps
     if "pcf_gco2eq" in entry:
         return {
             "gpu_count": node_data.gpu_count,
-            "pcf_carbon_per_gpu": float(entry["pcf_gco2eq"]),
+            "pcf_carbon_per_gpu": entry["pcf_gco2eq"],
         }
     process = entry["process"]
     mem_type = entry["mem_type"]
@@ -59,31 +150,38 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
         )
     return {
         "gpu_count": node_data.gpu_count,
-        "die_area_sq_cm": float(entry["die_area_cm2"]),
-        "vram_gb": float(entry["vram_gb"]),
+        "die_area_sq_cm": entry["die_area_cm2"],
+        "vram_gb": entry["vram_gb"],
         "process_scalar_carbon_per_sq_cm": PROCESS_SCALARS[process],
         "mem_scalar_carbon_per_gb": MEM_SCALARS[mem_type],
     }
 
 
-def _build_node(
-    node_data: NodeData,
-    template: dict,
-    config: Config,
-) -> dict:
+def _node_defaults(node_data: NodeData, config: Config) -> dict:
+    """Build the defaults block for a single node, gating embodied fields on config."""
+    defaults = {"grid_carbon_intensity": config.grid_carbon_intensity}
+    if config.embodied:
+        defaults.update(
+            {
+                "cpu_lifespan_seconds": config.cpu_lifespan_seconds,
+                "gpu_lifespan_seconds": config.gpu_lifespan_seconds,
+                "cpu_total": node_data.cpu_total,
+                "mem_total": node_data.mem_total,
+                "cpu_allocated": node_data.cpu_allocated,
+                "mem_allocated": node_data.mem_allocated,
+                **_gpu_defaults(node_data, config),
+            }
+        )
+    return defaults
+
+
+def _build_node(node_data: NodeData, config: Config) -> dict:
+    """Assemble the pipeline, defaults, and inputs entry for a single node."""
+    steps = _pipeline_steps(node_data, config)
     observations = synthesize(node_data.node, node_data.metrics)
     return {
-        "pipeline": template["pipeline"],
-        "defaults": {
-            "grid_carbon_intensity": config.grid_carbon_intensity,
-            "cpu_lifespan_seconds": 157680000,
-            "gpu_lifespan_seconds": 157680000,
-            "cpu_total": node_data.cpu_total,
-            "mem_total": node_data.mem_total,
-            "cpu_allocated": node_data.cpu_allocated,
-            "mem_allocated": node_data.mem_allocated,
-            **_gpu_defaults(node_data, config),
-        },
+        "pipeline": {"compute": steps},
+        "defaults": _node_defaults(node_data, config),
         "inputs": [
             {k: v for k, v in dataclasses.asdict(obs).items() if v is not None}
             for obs in observations
@@ -91,25 +189,15 @@ def _build_node(
     }
 
 
-def generate_manifest(
-    jobid: str,
-    node_data: list[NodeData],
-    config: Config,
-) -> dict:
-    """Build one IF manifest for an entire job, with one tree child per node.
-
-    The initialize block is the union of plugins from all node profiles present.
-    Each child declares its own pipeline list drawn from its profile template.
-    """
-    templates = {nd.node: _load_template(nd, config) for nd in node_data}
-
+def generate_manifest(jobid: str, node_data: list[NodeData], config: Config) -> dict:
+    """Build one IF manifest for an entire job, with one tree child per node."""
     all_plugins = {}
-    for template in templates.values():
-        for name, definition in template["initialize"]["plugins"].items():
-            all_plugins[name] = definition
+    for nd in node_data:
+        for step in _pipeline_steps(nd, config):
+            if step not in all_plugins:
+                all_plugins[step] = _load_plugin(step)
 
-    # NOTE(@broarr): Templates have the same aggregations, this grabs the first
-    aggregation = next(iter(templates.values()))["aggregation"]
+    aggregation = _AGGREGATION_EMBODIED if config.embodied else _AGGREGATION_OPERATIONAL
 
     return {
         "name": f"job{jobid}",
@@ -117,8 +205,6 @@ def generate_manifest(
         "aggregation": aggregation,
         "initialize": {"plugins": all_plugins},
         "tree": {
-            "children": {
-                nd.node: _build_node(nd, templates[nd.node], config) for nd in node_data
-            }
+            "children": {nd.node: _build_node(nd, config) for nd in node_data}
         },
     }

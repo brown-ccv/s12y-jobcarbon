@@ -1,0 +1,15 @@
+path: builtin
+method: Multiply
+config:
+  input-parameters:
+    - duration_hours
+    - node_power_kw
+  output-parameter: power
+parameter-metadata:
+  outputs:
+    power:
+      unit: kWh
+      description: Node energy consumed during the observation interval
+      aggregation-method:
+        time: sum
+        component: sum

@@ -1,0 +1,7 @@
+path: builtin
+method: Sum
+config:
+  input-parameters:
+    - cpu_power
+    - dram_power
+  output-parameter: node_power_kw

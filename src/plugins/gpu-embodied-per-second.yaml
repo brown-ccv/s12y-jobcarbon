@@ -1,0 +1,6 @@
+path: builtin
+method: Coefficient
+config:
+  input-parameter: gpu_embodied_carbon_node
+  coefficient: "=1/gpu_lifespan_seconds"
+  output-parameter: gpu_embodied_carbon_per_second

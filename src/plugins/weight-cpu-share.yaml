@@ -1,0 +1,6 @@
+path: builtin
+method: Coefficient
+config:
+  input-parameter: cpu_share
+  coefficient: 0.7
+  output-parameter: weighted_cpu_share

@@ -1,0 +1,15 @@
+path: builtin
+method: Multiply
+config:
+  input-parameters:
+    - grid_carbon_intensity
+    - power
+  output-parameter: carbon_operational
+parameter-metadata:
+  outputs:
+    carbon_operational:
+      unit: gCO2eq
+      description: Operational carbon emissions from energy use
+      aggregation-method:
+        time: sum
+        component: sum
