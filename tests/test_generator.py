@@ -58,7 +58,7 @@ _ESTIMATED_ENTRY = {
     "process": "samsung-8n",
     "mem_type": "gddr6",
 }
-_FAKE_OBS = [Observation(timestamp=1000, duration=60, node="node1", cpu_power=1.0)]
+_FAKE_OBS = [Observation(timestamp=1000, duration=60, cpu_power=1.0)]
 
 
 def test_years_to_seconds():

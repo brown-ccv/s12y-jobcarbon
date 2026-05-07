@@ -42,7 +42,6 @@ def synthesize(node_data: NodeData, step_seconds: int) -> list[Observation]:
         Observation(
             timestamp=row["timestamp"],
             duration=step_seconds,
-            node=node_data.node,
             cpu_power=row.get("cpu_power"),
             dram_power=row.get("dram_power"),
             host_power=row.get("host_power"),

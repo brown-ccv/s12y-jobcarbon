@@ -19,7 +19,6 @@ class NodeData:
 class Observation:
     timestamp: int
     duration: int
-    node: str
     cpu_power: float | None = None
     dram_power: float | None = None
     host_power: float | None = None
