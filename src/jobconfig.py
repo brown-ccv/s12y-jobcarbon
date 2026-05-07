@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -235,6 +236,10 @@ def _build_node_map(entries: list[dict]) -> dict[str, dict]:
 
 _DEFAULT_CPU_LIFESPAN_YEARS = 5
 _DEFAULT_GPU_LIFESPAN_YEARS = 5
+_DEFAULT_PROMETHEUS_URL = "http://localhost:9390"
+_DEFAULT_STEP_SECONDS = 60
+_DEFAULT_LOOKBACK_DAYS = 30
+_DEFAULT_MAX_SAMPLES = 10000
 
 
 def _years_to_seconds(years: int) -> int:
@@ -242,11 +247,22 @@ def _years_to_seconds(years: int) -> int:
     return years * 365 * 24 * 3600
 
 
+def _env_override[T](raw: dict, key: str, cast: Callable[[str], T], default: T) -> T:
+    """Read key from raw (falling back to default), then override with JOBCARBON_{KEY} env var if set."""
+    value = cast(raw.get(key, default))
+    raw_env = os.environ.get("JOBCARBON_" + key.upper())
+    return cast(raw_env) if raw_env is not None else value
+
+
 @dataclass(frozen=True)
 class Config:
     grid_carbon_intensity: float
     cpu_lifespan_seconds: int
     gpu_lifespan_seconds: int
+    prometheus_url: str
+    step_seconds: int
+    lookback_days: int
+    max_samples: int
     _node_map: dict[str, dict] = field(repr=False)
     embodied: bool = False
 
@@ -257,23 +273,37 @@ class Config:
         JOBCARBON_GRID_CARBON_INTENSITY — gCO2eq/kWh
         JOBCARBON_CPU_LIFESPAN_YEARS    — server amortisation period
         JOBCARBON_GPU_LIFESPAN_YEARS    — GPU amortisation period
+        JOBCARBON_PROMETHEUS_URL        — Prometheus base URL
+        JOBCARBON_STEP_SECONDS          — scrape resolution in seconds
+        JOBCARBON_LOOKBACK_DAYS         — range for job/node discovery
+        JOBCARBON_MAX_SAMPLES           — max samples per Prometheus query chunk
         """
         config_path = path if path is not None else get_config_file()
         with config_path.open("rb") as f:
             raw = tomllib.load(f)
-        gci = float(raw.get("grid_carbon_intensity", _DEFAULT_GRID_CARBON_INTENSITY))
-        if (env := os.environ.get("JOBCARBON_GRID_CARBON_INTENSITY")) is not None:
-            gci = float(env)
-        cpu_years = int(raw.get("cpu_lifespan_years", _DEFAULT_CPU_LIFESPAN_YEARS))
-        if (env := os.environ.get("JOBCARBON_CPU_LIFESPAN_YEARS")) is not None:
-            cpu_years = int(env)
-        gpu_years = int(raw.get("gpu_lifespan_years", _DEFAULT_GPU_LIFESPAN_YEARS))
-        if (env := os.environ.get("JOBCARBON_GPU_LIFESPAN_YEARS")) is not None:
-            gpu_years = int(env)
+        gci = _env_override(
+            raw, "grid_carbon_intensity", float, _DEFAULT_GRID_CARBON_INTENSITY
+        )
+        cpu_years = _env_override(
+            raw, "cpu_lifespan_years", int, _DEFAULT_CPU_LIFESPAN_YEARS
+        )
+        gpu_years = _env_override(
+            raw, "gpu_lifespan_years", int, _DEFAULT_GPU_LIFESPAN_YEARS
+        )
+        prometheus_url = _env_override(
+            raw, "prometheus_url", str, _DEFAULT_PROMETHEUS_URL
+        )
+        step_seconds = _env_override(raw, "step_seconds", int, _DEFAULT_STEP_SECONDS)
+        lookback_days = _env_override(raw, "lookback_days", int, _DEFAULT_LOOKBACK_DAYS)
+        max_samples = _env_override(raw, "max_samples", int, _DEFAULT_MAX_SAMPLES)
         return cls(
             grid_carbon_intensity=gci,
             cpu_lifespan_seconds=_years_to_seconds(cpu_years),
             gpu_lifespan_seconds=_years_to_seconds(gpu_years),
+            prometheus_url=prometheus_url,
+            step_seconds=step_seconds,
+            lookback_days=lookback_days,
+            max_samples=max_samples,
             _node_map=_build_node_map(raw.get("gpus", [])),
             embodied=embodied,
         )
@@ -308,6 +338,31 @@ class Config:
         doc.add(
             tomlkit.comment(
                 "gCO2eq/kWh — override with JOBCARBON_GRID_CARBON_INTENSITY"
+            )
+        )
+        doc.add(tomlkit.nl())
+        doc.add("prometheus_url", tomlkit.item(_DEFAULT_PROMETHEUS_URL))
+        doc.add(
+            tomlkit.comment(
+                "Prometheus base URL — override with JOBCARBON_PROMETHEUS_URL"
+            )
+        )
+        doc.add("step_seconds", tomlkit.item(_DEFAULT_STEP_SECONDS))
+        doc.add(
+            tomlkit.comment(
+                "Scrape resolution in seconds — override with JOBCARBON_STEP_SECONDS"
+            )
+        )
+        doc.add("lookback_days", tomlkit.item(_DEFAULT_LOOKBACK_DAYS))
+        doc.add(
+            tomlkit.comment(
+                "Range for job/node discovery — override with JOBCARBON_LOOKBACK_DAYS"
+            )
+        )
+        doc.add("max_samples", tomlkit.item(_DEFAULT_MAX_SAMPLES))
+        doc.add(
+            tomlkit.comment(
+                "Max samples per Prometheus query chunk — override with JOBCARBON_MAX_SAMPLES"
             )
         )
         doc.add(tomlkit.nl())

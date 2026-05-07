@@ -178,7 +178,7 @@ def _node_defaults(node_data: NodeData, config: Config) -> dict:
 def _build_node(node_data: NodeData, config: Config) -> dict:
     """Assemble the pipeline, defaults, and inputs entry for a single node."""
     steps = _pipeline_steps(node_data, config)
-    observations = synthesize(node_data.node, node_data.metrics)
+    observations = synthesize(node_data, config.step_seconds)
     return {
         "pipeline": {"compute": steps},
         "defaults": _node_defaults(node_data, config),
@@ -204,7 +204,5 @@ def generate_manifest(jobid: str, node_data: list[NodeData], config: Config) -> 
         "description": f"Carbon estimate for job {jobid}",
         "aggregation": aggregation,
         "initialize": {"plugins": all_plugins},
-        "tree": {
-            "children": {nd.node: _build_node(nd, config) for nd in node_data}
-        },
+        "tree": {"children": {nd.node: _build_node(nd, config) for nd in node_data}},
     }

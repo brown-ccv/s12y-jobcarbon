@@ -1,15 +1,15 @@
-from engine import LOOKBACK_DAYS, PrometheusEngine, Window
+from engine import PrometheusEngine, Window
 from models import NodeData
 from registry import GPU_PROFILES, METRIC_REGISTRY, PROFILE_METRICS, NodeProfile
 
 
-def _require_nonempty(result, message: str):
+def _require_nonempty[T](result: T, message: str) -> T:
     if not result:
         raise ValueError(message)
     return result
 
 
-def _prom_float(result) -> float:
+def _prom_float(result: list[dict]) -> float:
     """Parse a Prometheus instant result value to float
 
     Prometheus encodes all values as strings on the wire, and integer metrics
@@ -119,7 +119,7 @@ def _process_node(
 
 
 def process_job(
-    engine: PrometheusEngine, jobid: str, lookback_days: int = LOOKBACK_DAYS
+    engine: PrometheusEngine, jobid: str, lookback_days: int
 ) -> list[NodeData]:
     """Return one NodeData per node that ran the given Slurm job."""
     nodes, window = _get_nodes(engine, jobid, lookback_days)

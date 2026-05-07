@@ -1,5 +1,6 @@
 import pytest
 import responses
+from types import SimpleNamespace
 
 from engine import PrometheusEngine, Window
 from registry import MetricDefinition
@@ -12,21 +13,23 @@ PROM_ERROR = {
     "error": "something went wrong",
 }
 
+_CONFIG = SimpleNamespace(prometheus_url=BASE_URL, step_seconds=60, max_samples=10000)
+
 
 @responses.activate
 def test_query_range_raises_on_error_status():
     responses.add(responses.GET, f"{BASE_URL}/api/v1/query_range", json=PROM_ERROR)
-    engine = PrometheusEngine(BASE_URL)
+    engine = PrometheusEngine(_CONFIG)
     with pytest.raises(RuntimeError):
-        engine.query_range(METRIC, window=Window(start=1000, end=2000), node="node1")
+        engine.query_range(METRIC, Window(start=1000, end=2000), node="node1")
 
 
 @responses.activate
 def test_query_instant_raises_on_error_status():
     responses.add(responses.GET, f"{BASE_URL}/api/v1/query", json=PROM_ERROR)
-    engine = PrometheusEngine(BASE_URL)
+    engine = PrometheusEngine(_CONFIG)
     with pytest.raises(RuntimeError):
-        engine.query_instant(METRIC, time=1000, node="node1")
+        engine.query_instant(METRIC, 1000, node="node1")
 
 
 def test_window_chunking():

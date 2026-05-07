@@ -24,7 +24,7 @@ def _run_job(
     engine: PrometheusEngine, jobid: str, output: Path | None, config: Config
 ) -> None:
     """Run a single job manifest generation."""
-    node_data = process_job(engine, jobid)
+    node_data = process_job(engine, jobid, config.lookback_days)
     manifest = generate_manifest(jobid, node_data, config)
     content = dump(manifest)
     output_text(content, output)
@@ -68,7 +68,7 @@ def batch(
         output_path.mkdir(parents=True, exist_ok=True)
 
     config = Config.load(embodied=embodied)
-    engine = PrometheusEngine()
+    engine = PrometheusEngine(config)
 
     for job_id in job_ids:
         try:
@@ -90,7 +90,7 @@ def run(
 ) -> None:
     """Generate an IF manifest for a Slurm job"""
     config = Config.load(embodied=embodied)
-    engine = PrometheusEngine()
+    engine = PrometheusEngine(config)
     output_path = Path.cwd() / output if output else None
     _run_job(engine, job_id, output_path, config)
 

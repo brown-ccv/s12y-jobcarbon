@@ -38,7 +38,7 @@ def test_get_nodes_window_start_is_min_timestamp():
         prom_series("node1:9306", [(1000, 1.0), (1060, 2.0)]),
         prom_series("node2:9306", [(900, 1.0), (1060, 2.0)]),
     ]
-    _, window = _get_nodes(engine, jobid="42", lookback_days=30)
+    _, window = _get_nodes(engine, "42", 30)
     assert window.start == 900
 
 
@@ -48,7 +48,7 @@ def test_get_nodes_window_end_is_max_timestamp():
         prom_series("node1:9306", [(1000, 1.0), (1060, 2.0)]),
         prom_series("node2:9306", [(900, 1.0), (1120, 2.0)]),
     ]
-    _, window = _get_nodes(engine, jobid="42", lookback_days=30)
+    _, window = _get_nodes(engine, "42", 30)
     assert window.end == 1120
 
 
@@ -56,7 +56,7 @@ def test_get_nodes_raises_when_empty():
     engine = MagicMock()
     engine.query_lookback.return_value = []
     with pytest.raises(ValueError):
-        _get_nodes(engine, jobid="42", lookback_days=30)
+        _get_nodes(engine, "42", 30)
 
 
 @pytest.mark.parametrize(
@@ -96,5 +96,5 @@ def test_process_job_returns_one_nodedata_per_node():
         prom_series("node2:9306", [(1000, 1.0)]),
     ]
 
-    result = process_job(engine, jobid="42")
+    result = process_job(engine, "42", 30)
     assert len(result) == 2

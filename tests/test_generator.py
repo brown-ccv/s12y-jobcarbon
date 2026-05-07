@@ -13,6 +13,10 @@ def _cfg(**kwargs) -> Config:
         grid_carbon_intensity=381.0,
         cpu_lifespan_seconds=_years_to_seconds(5),
         gpu_lifespan_seconds=_years_to_seconds(5),
+        prometheus_url="http://localhost:9390",
+        step_seconds=60,
+        lookback_days=30,
+        max_samples=10000,
         _node_map={},
         embodied=False,
     )
@@ -24,6 +28,10 @@ def _cfg_with_gpu(entry: dict, embodied: bool = False) -> Config:
         grid_carbon_intensity=381.0,
         cpu_lifespan_seconds=_years_to_seconds(5),
         gpu_lifespan_seconds=_years_to_seconds(5),
+        prometheus_url="http://localhost:9390",
+        step_seconds=60,
+        lookback_days=30,
+        max_samples=10000,
         _node_map={"node1": entry},
         embodied=embodied,
     )
@@ -83,13 +91,19 @@ def test_pipeline_steps_embodied_server_only_excludes_gpu():
 
 
 def test_pipeline_steps_embodied_gpu_pcf_excludes_estimated():
-    steps = _pipeline_steps(_node(NodeProfile.FULL_GPU, gpu_count=4), _cfg_with_gpu(_PCF_ENTRY, embodied=True))
+    steps = _pipeline_steps(
+        _node(NodeProfile.FULL_GPU, gpu_count=4),
+        _cfg_with_gpu(_PCF_ENTRY, embodied=True),
+    )
     assert "gpu-embodied-pcf" in steps
     assert "gpu-chip-embodied" not in steps
 
 
 def test_pipeline_steps_embodied_gpu_estimated_excludes_pcf():
-    steps = _pipeline_steps(_node(NodeProfile.FULL_GPU, gpu_count=2), _cfg_with_gpu(_ESTIMATED_ENTRY, embodied=True))
+    steps = _pipeline_steps(
+        _node(NodeProfile.FULL_GPU, gpu_count=2),
+        _cfg_with_gpu(_ESTIMATED_ENTRY, embodied=True),
+    )
     assert "gpu-chip-embodied" in steps
     assert "gpu-embodied-pcf" not in steps
 
@@ -107,7 +121,9 @@ def test_node_defaults_operational_only_has_gci():
 def test_node_defaults_embodied_gates_on_flag():
     cfg_off = _cfg(embodied=False)
     cfg_on = _cfg(embodied=True)
-    assert "cpu_lifespan_seconds" not in _node_defaults(_node(NodeProfile.FULL), cfg_off)
+    assert "cpu_lifespan_seconds" not in _node_defaults(
+        _node(NodeProfile.FULL), cfg_off
+    )
     assert "cpu_lifespan_seconds" in _node_defaults(_node(NodeProfile.FULL), cfg_on)
 
 
@@ -118,13 +134,17 @@ def test_node_defaults_embodied_non_gpu_excludes_gpu_fields():
 
 
 def test_gpu_defaults_pcf_excludes_estimated_fields():
-    defaults = _gpu_defaults(_node(NodeProfile.FULL_GPU, gpu_count=4), _cfg_with_gpu(_PCF_ENTRY))
+    defaults = _gpu_defaults(
+        _node(NodeProfile.FULL_GPU, gpu_count=4), _cfg_with_gpu(_PCF_ENTRY)
+    )
     assert "pcf_carbon_per_gpu" in defaults
     assert "die_area_sq_cm" not in defaults
 
 
 def test_gpu_defaults_estimated_excludes_pcf_fields():
-    defaults = _gpu_defaults(_node(NodeProfile.FULL_GPU, gpu_count=2), _cfg_with_gpu(_ESTIMATED_ENTRY))
+    defaults = _gpu_defaults(
+        _node(NodeProfile.FULL_GPU, gpu_count=2), _cfg_with_gpu(_ESTIMATED_ENTRY)
+    )
     assert "process_scalar_carbon_per_sq_cm" in defaults
     assert "mem_scalar_carbon_per_gb" in defaults
     assert "pcf_carbon_per_gpu" not in defaults
@@ -145,18 +165,27 @@ def test_gpu_defaults_unknown_mem_type_raises():
 def test_generate_manifest_operational_aggregation():
     with patch("generator.synthesize", return_value=_FAKE_OBS):
         manifest = generate_manifest("42", [_node(NodeProfile.FULL)], _cfg())
-    assert manifest["aggregation"]["metrics"] == ["duration", "power", "carbon_operational"]
+    assert manifest["aggregation"]["metrics"] == [
+        "duration",
+        "power",
+        "carbon_operational",
+    ]
 
 
 def test_generate_manifest_embodied_aggregation():
     with patch("generator.synthesize", return_value=_FAKE_OBS):
-        manifest = generate_manifest("42", [_node(NodeProfile.FULL)], _cfg(embodied=True))
+        manifest = generate_manifest(
+            "42", [_node(NodeProfile.FULL)], _cfg(embodied=True)
+        )
     assert "carbon_embodied" in manifest["aggregation"]["metrics"]
     assert "carbon" in manifest["aggregation"]["metrics"]
 
 
 def test_generate_manifest_plugin_union_across_profiles():
-    nodes = [_node(NodeProfile.FULL), NodeData("node2", NodeProfile.HOST_ONLY, {}, 32, 128, 8, 32)]
+    nodes = [
+        _node(NodeProfile.FULL),
+        NodeData("node2", NodeProfile.HOST_ONLY, {}, 32, 128, 8, 32),
+    ]
     with patch("generator.synthesize", return_value=_FAKE_OBS):
         manifest = generate_manifest("42", nodes, _cfg())
     plugins = manifest["initialize"]["plugins"]

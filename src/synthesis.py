@@ -3,8 +3,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from engine import STEP_SECONDS
-from models import Observation
+from models import NodeData, Observation
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +26,11 @@ def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def synthesize(node: str, metrics: dict[str, list[dict]]) -> list[Observation]:
+def synthesize(node_data: NodeData, step_seconds: int) -> list[Observation]:
     """Combine per-metric Prometheus results into a list of Observations"""
     metric_frames = [
         MetricFrame(metric_id=metric_id, frame=_to_dataframe(metric_id, results))
-        for metric_id, results in metrics.items()
+        for metric_id, results in node_data.metrics.items()
     ]
 
     combined = metric_frames[0].frame
@@ -42,8 +41,8 @@ def synthesize(node: str, metrics: dict[str, list[dict]]) -> list[Observation]:
     return [
         Observation(
             timestamp=row["timestamp"],
-            duration=STEP_SECONDS,
-            node=node,
+            duration=step_seconds,
+            node=node_data.node,
             cpu_power=row.get("cpu_power"),
             dram_power=row.get("dram_power"),
             host_power=row.get("host_power"),

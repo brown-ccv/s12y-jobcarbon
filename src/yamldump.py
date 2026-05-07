@@ -3,7 +3,7 @@ import yaml
 
 
 class IndentedListDumper(yaml.Dumper):
-    def increase_indent(self, flow=False, indentless=False):
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> None:
         """Always indent list items, preventing PyYAML's default indentless block sequences"""
         return super().increase_indent(flow, False)
 

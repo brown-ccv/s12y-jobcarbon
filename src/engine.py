@@ -1,15 +1,11 @@
 from __future__ import annotations
-import os
 from dataclasses import dataclass
 from itertools import chain
 
 import requests
 
+from jobconfig import Config
 from registry import MetricDefinition
-
-PROMETHEUS_URL = os.environ.get("JOBCARBON_PROMETHEUS_URL", "http://localhost:9390")
-STEP_SECONDS = int(os.environ.get("JOBCARBON_STEP_SECONDS", 60))
-LOOKBACK_DAYS = int(os.environ.get("JOBCARBON_LOOKBACK_DAYS", 30))
 
 
 @dataclass(frozen=True)
@@ -18,9 +14,7 @@ class Window:
     end: int  # unix timestamp in seconds
 
     @staticmethod
-    def chunk(
-        window: Window, step_seconds: int = 60, max_samples: int = 10000
-    ) -> list[Window]:
+    def chunk(window: Window, step_seconds: int, max_samples: int) -> list[Window]:
         chunks = []
         cur_start = window.start
         chunk_duration = (max_samples - 1) * step_seconds
@@ -32,13 +26,12 @@ class Window:
 
 
 class PrometheusEngine:
-    def __init__(
-        self, base_url: str = PROMETHEUS_URL, step_seconds: int = STEP_SECONDS
-    ):
-        self.base_url = base_url.rstrip("/")
-        self.step_seconds = step_seconds
+    def __init__(self, config: Config):
+        self.base_url = config.prometheus_url.rstrip("/")
+        self.step_seconds = config.step_seconds
+        self.max_samples = config.max_samples
 
-    def _parse_response(self, response: requests.Response):
+    def _parse_response(self, response: requests.Response) -> list[dict]:
         """Raise on HTTP or Prometheus-level errors and return the result list"""
         response.raise_for_status()
         data = response.json()
@@ -70,10 +63,9 @@ class PrometheusEngine:
         window: Window,
         node: str = "",
         jobid: str = "",
-        max_samples: int = 10000,
     ) -> list[dict]:
         """Range query for jobs beyond the max sample count"""
-        chunks = Window.chunk(window, self.step_seconds, max_samples)
+        chunks = Window.chunk(window, self.step_seconds, self.max_samples)
 
         return list(
             chain.from_iterable(
@@ -87,14 +79,13 @@ class PrometheusEngine:
         window: Window,
         node: str = "",
         jobid: str = "",
-        max_samples: int = 10000,
     ) -> list[dict]:
         """Range query for a specific window of time"""
         duration = window.end - window.start
-        needs_chunking = duration / self.step_seconds > max_samples
+        needs_chunking = duration / self.step_seconds > self.max_samples
 
         if needs_chunking:
-            return self._query_range_chunked(metric, window, node, jobid, max_samples)
+            return self._query_range_chunked(metric, window, node, jobid)
         else:
             return self._query_range_standard(metric, window, node, jobid)
 
@@ -112,9 +103,9 @@ class PrometheusEngine:
     def query_lookback(
         self,
         metric: MetricDefinition,
+        lookback_days: int,
         node: str = "",
         jobid: str = "",
-        lookback_days: int = LOOKBACK_DAYS,
     ) -> list[dict]:
         """Lookback query, find metric in the last n days"""
         query = f"{metric.query.format(node=node, jobid=jobid)}[{lookback_days}d]"
