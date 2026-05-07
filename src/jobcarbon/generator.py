@@ -88,6 +88,13 @@ _EMBODIED_STEPS_GPU_ESTIMATED = [
     "sum-carbon",
 ]
 
+_OPERATIONAL_DEFAULTS: dict[NodeProfile, list[str]] = {
+    NodeProfile.FULL: [],
+    NodeProfile.FULL_GPU: [],
+    NodeProfile.HOST_ONLY: ["cpu_total", "mem_total", "cpu_allocated", "mem_allocated"],
+    NodeProfile.HOST_ONLY_GPU: ["cpu_total", "mem_total", "cpu_allocated", "mem_allocated"],
+}
+
 _AGGREGATION_OPERATIONAL = {
     "metrics": ["duration", "power", "carbon_operational"],
     "type": "both",
@@ -160,6 +167,8 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
 def _node_defaults(node_data: NodeData, config: Config) -> dict:
     """Build the defaults block for a single node, gating embodied fields on config."""
     defaults = {"grid_carbon_intensity": config.grid_carbon_intensity}
+    for field in _OPERATIONAL_DEFAULTS[node_data.profile]:
+        defaults[field] = getattr(node_data, field)
     if config.embodied:
         defaults.update(
             {

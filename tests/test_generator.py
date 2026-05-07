@@ -116,6 +116,19 @@ def test_pipeline_steps_embodied_gpu_missing_config_raises():
 def test_node_defaults_operational_only_has_gci():
     defaults = _node_defaults(_node(NodeProfile.FULL), _cfg())
     assert set(defaults.keys()) == {"grid_carbon_intensity"}
+def test_node_defaults_operational_full_only_has_gci():
+    for profile in (NodeProfile.FULL, NodeProfile.FULL_GPU):
+        defaults = _node_defaults(_node(profile), _cfg())
+        assert set(defaults.keys()) == {"grid_carbon_intensity"}
+
+
+def test_node_defaults_operational_host_only_includes_allocation_fields():
+    for profile in (NodeProfile.HOST_ONLY, NodeProfile.HOST_ONLY_GPU):
+        defaults = _node_defaults(_node(profile), _cfg())
+        assert {"cpu_total", "mem_total", "cpu_allocated", "mem_allocated"}.issubset(
+            defaults.keys()
+        )
+        assert "cpu_lifespan_seconds" not in defaults
 
 
 def test_node_defaults_embodied_gates_on_flag():
