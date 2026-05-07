@@ -7,12 +7,12 @@ from typing import Annotated
 import requests
 import typer
 
-from jobconfig import Config
-from engine import PrometheusEngine
-from generator import generate_manifest
-from loader import process_job
-from utils import output_text
-from yamldump import dump
+from .config import Config
+from .engine import PrometheusEngine
+from .generator import generate_manifest
+from .loader import process_job
+from .utils import output_text
+from .yamldump import dump
 
 app = typer.Typer()
 

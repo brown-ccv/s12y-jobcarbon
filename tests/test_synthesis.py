@@ -1,7 +1,7 @@
 from conftest import prom_series
-from models import NodeData
-from registry import NodeProfile
-from synthesis import synthesize
+from jobcarbon.models import NodeData
+from jobcarbon.registry import NodeProfile
+from jobcarbon.synthesis import synthesize
 
 
 def _make_node_data(timestamps=(1000, 1060, 1120), **metric_values) -> NodeData:

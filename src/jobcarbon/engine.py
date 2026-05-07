@@ -4,8 +4,8 @@ from itertools import chain
 
 import requests
 
-from jobconfig import Config
-from registry import MetricDefinition
+from .config import Config
+from .registry import MetricDefinition
 
 
 @dataclass(frozen=True)

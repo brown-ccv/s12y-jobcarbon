@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from models import NodeData, Observation
+from .models import NodeData, Observation
 
 logger = logging.getLogger(__name__)
 

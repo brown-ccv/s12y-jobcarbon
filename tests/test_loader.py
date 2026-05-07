@@ -2,9 +2,9 @@ import pytest
 from unittest.mock import MagicMock
 
 from conftest import prom_instant, prom_series
-from engine import Window
-from loader import _get_nodes, _process_node, process_job
-from registry import NodeProfile
+from jobcarbon.engine import Window
+from jobcarbon.loader import _get_nodes, _process_node, process_job
+from jobcarbon.registry import NodeProfile
 
 
 def _make_process_node_engine(

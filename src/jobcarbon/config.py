@@ -8,7 +8,7 @@ from pathlib import Path
 
 import tomlkit
 
-from utils import get_config_file
+from .utils import get_config_file
 
 logger = logging.getLogger(__name__)
 

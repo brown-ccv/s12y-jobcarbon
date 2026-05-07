@@ -2,8 +2,8 @@ import pytest
 import responses
 from types import SimpleNamespace
 
-from engine import PrometheusEngine, Window
-from registry import MetricDefinition
+from jobcarbon.engine import PrometheusEngine, Window
+from jobcarbon.registry import MetricDefinition
 
 BASE_URL = "http://localhost:9999"
 METRIC = MetricDefinition(id="test", query="test_metric{{node='{node}'}}")

@@ -4,10 +4,10 @@ from pathlib import Path
 
 import yaml
 
-from jobconfig import Config, PROCESS_SCALARS, MEM_SCALARS
-from models import NodeData
-from registry import GPU_PROFILES, NodeProfile
-from synthesis import synthesize
+from .config import Config, PROCESS_SCALARS, MEM_SCALARS
+from .models import NodeData
+from .registry import GPU_PROFILES, NodeProfile
+from .synthesis import synthesize
 
 logger = logging.getLogger(__name__)
 

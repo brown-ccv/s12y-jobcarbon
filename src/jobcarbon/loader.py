@@ -1,6 +1,6 @@
-from engine import PrometheusEngine, Window
-from models import NodeData
-from registry import GPU_PROFILES, METRIC_REGISTRY, PROFILE_METRICS, NodeProfile
+from .engine import PrometheusEngine, Window
+from .models import NodeData
+from .registry import GPU_PROFILES, METRIC_REGISTRY, PROFILE_METRICS, NodeProfile
 
 
 def _require_nonempty[T](result: T, message: str) -> T:

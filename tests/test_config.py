@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from jobconfig import Config, _parse_gres, parse_hostlist, parse_sinfo
+from jobcarbon.config import Config, _parse_gres, parse_hostlist, parse_sinfo
 
 
 def test_parse_hostlist_single():

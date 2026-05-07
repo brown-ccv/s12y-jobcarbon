@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from registry import NodeProfile
+from .registry import NodeProfile
 
 
 @dataclass
