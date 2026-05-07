@@ -27,7 +27,6 @@ def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-
 def synthesize(node: str, metrics: dict[str, list[dict]]) -> list[Observation]:
     """Combine per-metric Prometheus results into a list of Observations"""
     metric_frames = [

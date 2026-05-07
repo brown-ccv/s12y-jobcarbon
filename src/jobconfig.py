@@ -7,9 +7,10 @@ from pathlib import Path
 
 import tomlkit
 
+from utils import get_config_file
+
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CONFIG_PATH = Path(__file__).parent.parent / "config" / "jobcarbon.toml"
 _DEFAULT_GRID_CARBON_INTENSITY = 381  # gCO2eq/kWh, Rhode Island grid average 2023
 
 # Yield-corrected gCO2eq/cm2 per TSMC process node
@@ -240,9 +241,7 @@ class Config:
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":
         """Load jobcarbon.toml; JOBCARBON_GRID_CARBON_INTENSITY overrides the file value."""
-        config_path = path or Path(
-            os.environ.get("JOBCARBON_CONFIG", _DEFAULT_CONFIG_PATH)
-        )
+        config_path = path if path is not None else get_config_file()
         with config_path.open("rb") as f:
             raw = tomllib.load(f)
         gci = float(raw.get("grid_carbon_intensity", _DEFAULT_GRID_CARBON_INTENSITY))

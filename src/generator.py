@@ -8,10 +8,9 @@ from jobconfig import Config, PROCESS_SCALARS, MEM_SCALARS
 from models import NodeData
 from registry import GPU_PROFILES
 from synthesis import synthesize
+from utils import get_template_dir
 
 logger = logging.getLogger(__name__)
-
-TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
 
 def _template_name(node_data: NodeData, config: Config) -> str:
@@ -29,7 +28,7 @@ def _template_name(node_data: NodeData, config: Config) -> str:
 
 def _load_template(node_data: NodeData, config: Config) -> dict:
     name = _template_name(node_data, config)
-    with (TEMPLATES_DIR / f"{name}.yaml").open() as f:
+    with (get_template_dir() / f"{name}.yaml").open() as f:
         return yaml.safe_load(f)
 
 
