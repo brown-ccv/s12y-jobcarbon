@@ -1,3 +1,5 @@
+import pytest
+
 from jobcarbon.alignment import align
 from jobcarbon.models import NodeData
 
@@ -43,8 +45,5 @@ def test_alignment_non_positive_interval_raises():
         cpu_allocated=1,
         mem_allocated=1,
     )
-    try:
+    with pytest.raises(ValueError):
         align(nd, step_seconds=60)
-        assert False, "expected ValueError"
-    except ValueError as e:
-        assert "non-positive duration" in str(e)

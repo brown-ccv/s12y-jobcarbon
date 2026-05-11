@@ -11,7 +11,7 @@ from .registry import MetricDefinition
 @dataclass(frozen=True)
 class Window:
     start: int  # unix timestamp in seconds
-    end: int  # unix timestamp in seconds
+    end: int    # unix timestamp in seconds
 
     @staticmethod
     def chunk(window: Window, step_seconds: int, max_samples: int) -> list[Window]:
@@ -69,7 +69,7 @@ class PrometheusEngine:
 
         return list(
             chain.from_iterable(
-                [self._query_range_standard(metric, c, node, jobid) for c in chunks]
+                self._query_range_standard(metric, c, node, jobid) for c in chunks
             )
         )
 

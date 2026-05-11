@@ -6,7 +6,7 @@ from .registry import NodeProfile
 @dataclass
 class NodeData:
     node: str
-    profile: NodeProfile
+    profile: NodeProfile | None
     metrics: dict[str, list[dict[str, str]]]
     cpu_total: int
     mem_total: int

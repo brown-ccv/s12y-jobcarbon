@@ -33,6 +33,9 @@ def align(node_data: NodeData, step_seconds: int) -> list[Observation]:
         for metric_id, results in node_data.metrics.items()
     ]
 
+    if not metric_frames:
+        raise ValueError("no metric data available to align for node")
+
     combined = metric_frames[0].frame
     for mf in metric_frames[1:]:
         combined = combined.merge(mf.frame, on="timestamp", how="inner")
