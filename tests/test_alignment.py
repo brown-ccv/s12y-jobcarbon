@@ -1,7 +1,7 @@
 from conftest import prom_series
 from jobcarbon.models import NodeData
 from jobcarbon.registry import NodeProfile
-from jobcarbon.synthesis import synthesize
+from jobcarbon.alignment import align
 
 
 def _make_node_data(timestamps=(1000, 1060, 1120), **metric_values) -> NodeData:
@@ -21,13 +21,13 @@ def _make_node_data(timestamps=(1000, 1060, 1120), **metric_values) -> NodeData:
     )
 
 
-def test_synthesize_maps_metric_fields_to_observations():
+def test_alignment_maps_metric_fields_to_observations():
     node_data = _make_node_data(cpu_power=100.0, dram_power=50.0)
-    result = synthesize(node_data, 60)
+    result = align(node_data, 60)
     assert result[0].cpu_power == 100.0
 
 
-def test_synthesize_absent_metric_key_becomes_none():
+def test_alignment_absent_metric_key_becomes_none():
     node_data = _make_node_data(host_power=200.0)
-    result = synthesize(node_data, 60)
+    result = align(node_data, 60)
     assert result[0].gpu_power is None

@@ -5,7 +5,12 @@ import pytest
 from jobcarbon.config import Config, _years_to_seconds
 from jobcarbon.models import NodeData, Observation
 from jobcarbon.registry import NodeProfile
-from jobcarbon.generator import _pipeline_steps, _node_defaults, _gpu_defaults, generate_manifest
+from jobcarbon.generator import (
+    _pipeline_steps,
+    _node_defaults,
+    _gpu_defaults,
+    generate_manifest,
+)
 
 
 def _cfg(**kwargs) -> Config:
@@ -116,6 +121,8 @@ def test_pipeline_steps_embodied_gpu_missing_config_raises():
 def test_node_defaults_operational_only_has_gci():
     defaults = _node_defaults(_node(NodeProfile.FULL), _cfg())
     assert set(defaults.keys()) == {"grid_carbon_intensity"}
+
+
 def test_node_defaults_operational_full_only_has_gci():
     for profile in (NodeProfile.FULL, NodeProfile.FULL_GPU):
         defaults = _node_defaults(_node(profile), _cfg())
@@ -176,7 +183,7 @@ def test_gpu_defaults_unknown_mem_type_raises():
 
 
 def test_generate_manifest_operational_aggregation():
-    with patch("jobcarbon.generator.synthesize", return_value=_FAKE_OBS):
+    with patch("jobcarbon.generator.align", return_value=_FAKE_OBS):
         manifest = generate_manifest("42", [_node(NodeProfile.FULL)], _cfg())
     assert manifest["aggregation"]["metrics"] == [
         "duration",
@@ -186,7 +193,7 @@ def test_generate_manifest_operational_aggregation():
 
 
 def test_generate_manifest_embodied_aggregation():
-    with patch("jobcarbon.generator.synthesize", return_value=_FAKE_OBS):
+    with patch("jobcarbon.generator.align", return_value=_FAKE_OBS):
         manifest = generate_manifest(
             "42", [_node(NodeProfile.FULL)], _cfg(embodied=True)
         )
@@ -199,7 +206,7 @@ def test_generate_manifest_plugin_union_across_profiles():
         _node(NodeProfile.FULL),
         NodeData("node2", NodeProfile.HOST_ONLY, {}, 32, 128, 8, 32),
     ]
-    with patch("jobcarbon.generator.synthesize", return_value=_FAKE_OBS):
+    with patch("jobcarbon.generator.align", return_value=_FAKE_OBS):
         manifest = generate_manifest("42", nodes, _cfg())
     plugins = manifest["initialize"]["plugins"]
     assert "sum-scaph-power" in plugins

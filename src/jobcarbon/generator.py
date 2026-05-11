@@ -7,7 +7,7 @@ import yaml
 from .config import Config, PROCESS_SCALARS, MEM_SCALARS
 from .models import NodeData
 from .registry import GPU_PROFILES, NodeProfile
-from .synthesis import synthesize
+from .alignment import align
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,12 @@ _OPERATIONAL_DEFAULTS: dict[NodeProfile, list[str]] = {
     NodeProfile.FULL: [],
     NodeProfile.FULL_GPU: [],
     NodeProfile.HOST_ONLY: ["cpu_total", "mem_total", "cpu_allocated", "mem_allocated"],
-    NodeProfile.HOST_ONLY_GPU: ["cpu_total", "mem_total", "cpu_allocated", "mem_allocated"],
+    NodeProfile.HOST_ONLY_GPU: [
+        "cpu_total",
+        "mem_total",
+        "cpu_allocated",
+        "mem_allocated",
+    ],
 }
 
 _AGGREGATION_OPERATIONAL = {
@@ -187,7 +192,7 @@ def _node_defaults(node_data: NodeData, config: Config) -> dict:
 def _build_node(node_data: NodeData, config: Config) -> dict:
     """Assemble the pipeline, defaults, and inputs entry for a single node."""
     steps = _pipeline_steps(node_data, config)
-    observations = synthesize(node_data, config.step_seconds)
+    observations = align(node_data, config.step_seconds)
     return {
         "pipeline": {"compute": steps},
         "defaults": _node_defaults(node_data, config),
