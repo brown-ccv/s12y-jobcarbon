@@ -11,7 +11,7 @@ from .registry import MetricDefinition
 @dataclass(frozen=True)
 class Window:
     start: int  # unix timestamp in seconds
-    end: int    # unix timestamp in seconds
+    end: int  # unix timestamp in seconds
 
     @staticmethod
     def chunk(window: Window, step_seconds: int, max_samples: int) -> list[Window]:
