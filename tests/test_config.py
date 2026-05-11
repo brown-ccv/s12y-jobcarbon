@@ -74,11 +74,11 @@ def test_config_load_node_map_basic(tmp_path):
         grid_carbon_intensity = 381
         [[gpus]]
         gpu_model = "NVIDIA A100"
-        pcf_gco2eq = 127600.0
+        pcf_carbon_per_gpu = 127600.0
         nodes = ["gpu1", "gpu2"]
         [[gpus]]
         gpu_model = "NVIDIA H100"
-        pcf_gco2eq = 164000.0
+        pcf_carbon_per_gpu = 164000.0
         nodes = ["gpu3"]
     """,
     )
@@ -95,11 +95,11 @@ def test_config_load_node_map_duplicate_raises(tmp_path):
         grid_carbon_intensity = 381
         [[gpus]]
         gpu_model = "NVIDIA A100"
-        pcf_gco2eq = 127600.0
+        pcf_carbon_per_gpu = 127600.0
         nodes = ["gpu1"]
         [[gpus]]
         gpu_model = "NVIDIA H100"
-        pcf_gco2eq = 164000.0
+        pcf_carbon_per_gpu = 164000.0
         nodes = ["gpu1"]
     """,
     )

@@ -55,10 +55,10 @@ def _node(profile: NodeProfile, gpu_count: int = 0) -> NodeData:
     )
 
 
-_PCF_ENTRY = {"gpu_model": "NVIDIA A100", "pcf_gco2eq": 127600.0}
+_PCF_ENTRY = {"gpu_model": "NVIDIA A100", "pcf_carbon_per_gpu": 127600.0}
 _ESTIMATED_ENTRY = {
     "gpu_model": "NVIDIA RTX A5000",
-    "die_area_cm2": 6.28,
+    "die_area_sq_cm": 6.28,
     "vram_gb": 24.0,
     "process": "samsung-8n",
     "mem_type": "gddr6",

@@ -118,10 +118,9 @@ def _embodied_steps(node_data: NodeData, config: Config) -> list[str]:
     entry = config.gpu_for_node(node_data.node)
     if entry is None:
         raise ValueError(
-            f"node '{node_data.node}' has a GPU profile but is not in gpu_config; "
-            "re-run create-config and add it to jobcarbon.toml"
+            f"node '{node_data.node}' has a GPU profile but is not in gpu_config"
         )
-    if "pcf_gco2eq" in entry:
+    if "pcf_carbon_per_gpu" in entry:
         return _EMBODIED_STEPS_GPU_PCF
     return _EMBODIED_STEPS_GPU_ESTIMATED
 
@@ -139,14 +138,19 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
     if node_data.profile not in GPU_PROFILES:
         return {}
     entry = config.gpu_for_node(node_data.node)
-    assert entry is not None  # already verified by _embodied_steps
-    if "pcf_gco2eq" in entry:
+    if entry is None:
+        raise ValueError(
+            f"node '{node_data.node}' has a GPU profile but is not in gpu_config"
+        )
+
+    if "pcf_carbon_per_gpu" in entry:
         return {
             "gpu_count": node_data.gpu_count,
-            "pcf_carbon_per_gpu": entry["pcf_gco2eq"],
+            "pcf_carbon_per_gpu": entry["pcf_carbon_per_gpu"],
         }
-    process = entry["process"]
-    mem_type = entry["mem_type"]
+
+    process = entry.get("process")
+    mem_type = entry.get("mem_type")
     if process not in PROCESS_SCALARS:
         raise ValueError(
             f"unknown process {process!r} — must be one of: {', '.join(sorted(PROCESS_SCALARS))}"
@@ -160,9 +164,10 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
             "GPU '%s': samsung-8n is not in Boakes et al.; using TSMC N7 scalar as proxy.",
             entry.get("gpu_model", "unknown"),
         )
+
     return {
         "gpu_count": node_data.gpu_count,
-        "die_area_sq_cm": entry["die_area_cm2"],
+        "die_area_sq_cm": entry["die_area_sq_cm"],
         "vram_gb": entry["vram_gb"],
         "process_scalar_carbon_per_sq_cm": PROCESS_SCALARS[process],
         "mem_scalar_carbon_per_gb": MEM_SCALARS[mem_type],

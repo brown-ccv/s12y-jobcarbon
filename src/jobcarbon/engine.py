@@ -82,12 +82,12 @@ class PrometheusEngine:
     ) -> list[dict]:
         """Range query for a specific window of time"""
         duration = window.end - window.start
-        needs_chunking = duration / self.step_seconds > self.max_samples
+        num_samples = duration // self.step_seconds + 1
+        needs_chunking = num_samples > self.max_samples
 
         if needs_chunking:
             return self._query_range_chunked(metric, window, node, jobid)
-        else:
-            return self._query_range_standard(metric, window, node, jobid)
+        return self._query_range_standard(metric, window, node, jobid)
 
     def query_instant(
         self, metric: MetricDefinition, time: int, node: str = "", jobid: str = ""
