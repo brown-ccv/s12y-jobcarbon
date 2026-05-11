@@ -38,10 +38,19 @@ def align(node_data: NodeData, step_seconds: int) -> list[Observation]:
         combined = combined.merge(mf.frame, on="timestamp", how="inner")
     combined = combined.sort_values("timestamp")
 
+    combined["duration"] = combined["timestamp"].shift(-1) - combined["timestamp"]
+
+    if (combined["duration"].iloc[:-1] <= 0).any():
+        raise ValueError("non-positive duration between consecutive timestamps")
+
+    combined.at[combined.index[-1], "duration"] = int(step_seconds)
+
+    combined["duration"] = combined["duration"].astype(int)
+
     return [
         Observation(
-            timestamp=row["timestamp"],
-            duration=step_seconds,
+            timestamp=int(row["timestamp"]),
+            duration=int(row["duration"]),
             cpu_power=row.get("cpu_power"),
             dram_power=row.get("dram_power"),
             host_power=row.get("host_power"),

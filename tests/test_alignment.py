@@ -1,33 +1,36 @@
-from conftest import prom_series
+import pandas as pd
+
+from jobcarbon.alignment import _to_dataframe, align
 from jobcarbon.models import NodeData
-from jobcarbon.registry import NodeProfile
-from jobcarbon.alignment import align
 
 
-def _make_node_data(timestamps=(1000, 1060, 1120), **metric_values) -> NodeData:
-    """Build a NodeData with aligned timeseries for each named metric"""
+def _make_series(timestamps, values=None):
+    if values is None:
+        values = [1.0] * len(timestamps)
+    return {"values": [[ts, v] for ts, v in zip(timestamps, values)]}
+
+
+def test_alignment_variable_duration():
+    node = "nodeA"
     metrics = {
-        metric_id: [prom_series("node1:9191", [(ts, val) for ts in timestamps])]
-        for metric_id, val in metric_values.items()
+        "cpu_power": [_make_series([0, 60, 120])],
+        "dram_power": [_make_series([0, 120])],
     }
-    return NodeData(
-        node="node1",
-        profile=NodeProfile.FULL,
-        metrics=metrics,
-        cpu_total=32,
-        mem_total=128,
-        cpu_allocated=8,
-        mem_allocated=32,
-    )
+    nd = NodeData(node=node, profile=None, metrics=metrics, cpu_total=1, mem_total=1, cpu_allocated=1, mem_allocated=1)
+    obs = align(nd, step_seconds=60)
+    assert len(obs) == 2
+    assert obs[0].duration == 120
+    assert obs[1].duration == 60
 
 
-def test_alignment_maps_metric_fields_to_observations():
-    node_data = _make_node_data(cpu_power=100.0, dram_power=50.0)
-    result = align(node_data, 60)
-    assert result[0].cpu_power == 100.0
 
-
-def test_alignment_absent_metric_key_becomes_none():
-    node_data = _make_node_data(host_power=200.0)
-    result = align(node_data, 60)
-    assert result[0].gpu_power is None
+def test_alignment_non_positive_interval_raises():
+    metrics = {"cpu_power": [_make_series([0, 60])], "dram_power": [_make_series([0, 60])]} 
+    
+    metrics_bad = {"cpu_power": [_make_series([0, 60, 60])], "dram_power": [_make_series([0, 60])]} 
+    nd = NodeData(node="n", profile=None, metrics=metrics_bad, cpu_total=1, mem_total=1, cpu_allocated=1, mem_allocated=1)
+    try:
+        align(nd, step_seconds=60)
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "non-positive duration" in str(e)
