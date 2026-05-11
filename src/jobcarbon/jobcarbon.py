@@ -78,6 +78,7 @@ def batch(
             logger.error("%s failed: %s", job_id, e)
 
 
+# TODO(@broarr): Rename to manifest instead of run to avoid confusion with `if-run`
 @app.command()
 def run(
     job_id: Annotated[str, typer.Argument(help="Slurm job id")],
@@ -94,6 +95,7 @@ def run(
     output_path = Path.cwd() / output if output else None
     _run_job(engine, job_id, output_path, config)
 
+# TODO(@broarr): Add some help text about how to run `if-run` on a manifest
 
 if __name__ == "__main__":
     app()

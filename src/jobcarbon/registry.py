@@ -11,6 +11,7 @@ class MetricDefinition:
 # Nodes without Scaphandre data are skipped — no estimation fallback
 # All power metrics are in kilowatts
 # All memory metrics are in GiB
+# TODO(@broarr): consider using a cpu_utilization metric instead of the static allocated and total
 METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "cpu_power": MetricDefinition(
         id="cpu_power",
