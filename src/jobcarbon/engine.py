@@ -45,7 +45,7 @@ class PrometheusEngine:
         self, metric: MetricDefinition, window: Window, node: str = "", jobid: str = ""
     ) -> list[dict]:
         """Range query for jobs shorter than the max sample count"""
-        query = metric.query.format(node=node, jobid=jobid)
+        query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
         response = requests.get(
             f"{self.base_url}/api/v1/query_range",
             params={
@@ -93,7 +93,7 @@ class PrometheusEngine:
         self, metric: MetricDefinition, time: int, node: str = "", jobid: str = ""
     ) -> list[dict]:
         """Instant query at a specific Unix timestamp"""
-        query = metric.query.format(node=node, jobid=jobid)
+        query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
         response = requests.get(
             f"{self.base_url}/api/v1/query",
             params={"query": query, "time": time},
@@ -108,7 +108,7 @@ class PrometheusEngine:
         jobid: str = "",
     ) -> list[dict]:
         """Lookback query, find metric in the last n days"""
-        query = f"{metric.query.format(node=node, jobid=jobid)}[{lookback_days}d]"
+        query = f"{metric.query.format(node=node, jobid=jobid, step=self.step_seconds)}[{lookback_days}d]"
         response = requests.get(
             f"{self.base_url}/api/v1/query",
             params={"query": query},
