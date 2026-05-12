@@ -175,7 +175,8 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
 
 
 def _node_defaults(node_data: NodeData, config: Config) -> dict:
-    """Build the defaults block for a single node, gating embodied fields on config."""
+    """Build the defaults block for a single node, gating embodied fields on
+    config."""
     defaults = {"grid_carbon_intensity": config.grid_carbon_intensity}
     for field in _OPERATIONAL_DEFAULTS[node_data.profile]:
         defaults[field] = getattr(node_data, field)
@@ -209,7 +210,8 @@ def _build_node(node_data: NodeData, config: Config) -> dict:
 
 
 def generate_manifest(jobid: str, node_data: list[NodeData], config: Config) -> dict:
-    """Build one IF manifest for an entire job, with one tree child per node."""
+    """Build one IF manifest for an entire job, with one tree child per
+    node."""
     all_plugins = {}
     for nd in node_data:
         for step in _pipeline_steps(nd, config):

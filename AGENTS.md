@@ -11,7 +11,7 @@ The code is a proper Python package at `src/jobcarbon/` installed in editable mo
 
 ```
 src/jobcarbon/__init__.py     # package init; exports Typer app
-src/jobcarbon/jobcarbon.py    # Typer CLI: commands run, batch, create-config
+ src/jobcarbon/jobcarbon.py    # Typer CLI: commands manifest, batch, create-config
 src/jobcarbon/config.py       # Config dataclass (loaded from jobcarbon.toml + env overrides);
                               #   also parse_sinfo / parse_hostlist for create-config
 src/jobcarbon/models.py       # NodeData and Observation dataclasses
@@ -31,8 +31,8 @@ src/jobcarbon/plugins/        # one YAML plugin definition per pipeline step
 uv run pytest tests/                        # run all tests (fast, no network — uses `responses` mock)
 uv run ruff check src/                      # lint
 uv run ruff format src/                     # format
-uv run jobcarbon run $JOB_ID                # generate manifest, prints to stdout
-uv run jobcarbon run $JOB_ID --embodied     # include embodied carbon estimate
+ uv run jobcarbon manifest $JOB_ID                # generate manifest, prints to stdout
+ uv run jobcarbon manifest $JOB_ID --embodied     # include embodied carbon estimate
 uv run jobcarbon batch $JOB_ID ...          # multiple jobs, one .yaml each
 uv run jobcarbon create-config              # generate jobcarbon.toml from sinfo output
 ```

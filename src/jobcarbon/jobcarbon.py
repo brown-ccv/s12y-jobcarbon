@@ -61,7 +61,11 @@ def batch(
         bool, typer.Option("--embodied", help="include embodied carbon estimate")
     ] = False,
 ) -> None:
-    """Generate multiple manifests in one pass"""
+    """Generate multiple manifests in one pass.
+
+    See `jobcarbon manifest --help` for more details on Impact Framework
+    and manifest files.
+    """
     output_path = Path.cwd()
     if output_dir:
         output_path = Path(output_dir)
@@ -78,9 +82,8 @@ def batch(
             logger.error("%s failed: %s", job_id, e)
 
 
-# TODO(@broarr): Rename to manifest instead of run to avoid confusion with `if-run`
 @app.command()
-def run(
+def manifest(
     job_id: Annotated[str, typer.Argument(help="Slurm job id")],
     output: Annotated[
         str | None, typer.Option(help="output file for manifest (default: stdout)")
@@ -89,13 +92,20 @@ def run(
         bool, typer.Option("--embodied", help="include embodied carbon estimate")
     ] = False,
 ) -> None:
-    """Generate an IF manifest for a Slurm job"""
+    """Generate an IF manifest for a Slurm job.
+
+    Impact Framework manifests can be used to compute carbon intensity
+    by using the `if-run` tool. In Oscar run `module load impact-
+    framework` to load Impact Framework into your current session or run
+    `npm install -g @grnsft/if` to install Impact Framework locally. See
+    https://if.greensoftware.foundation
+    for more details on Impact Framework.
+    """
     config = Config.load(embodied=embodied)
     engine = PrometheusEngine(config)
     output_path = Path.cwd() / output if output else None
     _run_job(engine, job_id, output_path, config)
 
-# TODO(@broarr): Add some help text about how to run `if-run` on a manifest
 
 if __name__ == "__main__":
     app()

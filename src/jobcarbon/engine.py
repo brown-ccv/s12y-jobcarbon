@@ -32,7 +32,8 @@ class PrometheusEngine:
         self.max_samples = config.max_samples
 
     def _parse_response(self, response: requests.Response) -> list[dict]:
-        """Raise on HTTP or Prometheus-level errors and return the result list"""
+        """Raise on HTTP or Prometheus-level errors and return the result
+        list."""
         response.raise_for_status()
         data = response.json()
         if data["status"] != "success":
@@ -44,7 +45,7 @@ class PrometheusEngine:
     def _query_range_standard(
         self, metric: MetricDefinition, window: Window, node: str = "", jobid: str = ""
     ) -> list[dict]:
-        """Range query for jobs shorter than the max sample count"""
+        """Range query for jobs shorter than the max sample count."""
         query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
         response = requests.get(
             f"{self.base_url}/api/v1/query_range",
@@ -64,7 +65,7 @@ class PrometheusEngine:
         node: str = "",
         jobid: str = "",
     ) -> list[dict]:
-        """Range query for jobs beyond the max sample count"""
+        """Range query for jobs beyond the max sample count."""
         chunks = Window.chunk(window, self.step_seconds, self.max_samples)
 
         return list(
@@ -80,7 +81,7 @@ class PrometheusEngine:
         node: str = "",
         jobid: str = "",
     ) -> list[dict]:
-        """Range query for a specific window of time"""
+        """Range query for a specific window of time."""
         duration = window.end - window.start
         num_samples = duration // self.step_seconds + 1
         needs_chunking = num_samples > self.max_samples
@@ -92,7 +93,7 @@ class PrometheusEngine:
     def query_instant(
         self, metric: MetricDefinition, time: int, node: str = "", jobid: str = ""
     ) -> list[dict]:
-        """Instant query at a specific Unix timestamp"""
+        """Instant query at a specific Unix timestamp."""
         query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
         response = requests.get(
             f"{self.base_url}/api/v1/query",
@@ -107,7 +108,7 @@ class PrometheusEngine:
         node: str = "",
         jobid: str = "",
     ) -> list[dict]:
-        """Lookback query, find metric in the last n days"""
+        """Lookback query, find metric in the last n days."""
         query = f"{metric.query.format(node=node, jobid=jobid, step=self.step_seconds)}[{lookback_days}d]"
         response = requests.get(
             f"{self.base_url}/api/v1/query",

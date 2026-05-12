@@ -10,10 +10,11 @@ def _require_nonempty[T](result: T, message: str) -> T:
 
 
 def _prom_float(result: list[dict]) -> float:
-    """Parse a Prometheus instant result value to float
+    """Parse a Prometheus instant result value to float.
 
-    Prometheus encodes all values as strings on the wire, and integer metrics
-    are sometimes represented as floats (e.g. "4.0"). This handles both cases
+    Prometheus encodes all values as strings on the wire, and integer
+    metrics are sometimes represented as floats (e.g. "4.0"). This
+    handles both cases
     """
     return float(result[0]["value"][1])
 
@@ -21,7 +22,8 @@ def _prom_float(result: list[dict]) -> float:
 def _get_nodes(
     engine: PrometheusEngine, jobid: str, lookback_days: int
 ) -> tuple[list[str], Window]:
-    """Finds all nodes a job ran on and the time window in which the job ran"""
+    """Finds all nodes a job ran on and the time window in which the job
+    ran."""
     # TODO(@broarr): Check if job is running via Slurm prometheus exporter
     results = engine.query_lookback(
         METRIC_REGISTRY["job_cgroup"], jobid=jobid, lookback_days=lookback_days

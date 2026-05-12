@@ -158,8 +158,9 @@ SEED_SPECS: dict[str, dict] = {
 def _parse_gres(gres: str) -> list[str]:
     """Parse a Slurm GRES string into GPU type names.
 
-    Handles "gpu:a100:4", "gpu:a100", and bare "gpu".
-    Returns GPU type strings (e.g. ["a100"]), or empty list if no GPU entries."""
+    Handles "gpu:a100:4", "gpu:a100", and bare "gpu". Returns GPU type
+    strings (e.g. ["a100"]), or empty list if no GPU entries.
+    """
     gpu_types = []
     for part in gres.split(","):
         part = part.strip()
@@ -174,8 +175,9 @@ def _parse_gres(gres: str) -> list[str]:
 def parse_sinfo(lines: list[str]) -> tuple[dict[str, set[str]], set[str]]:
     """Parse sinfo -h -o "%N %G" output into a gres_name to node-set map.
 
-    Returns (gres_nodes, unknown_gres) where unknown_gres contains GRES labels
-    not present in SEED_SPECS. Raises ValueError on malformed lines.
+    Returns (gres_nodes, unknown_gres) where unknown_gres contains GRES
+    labels not present in SEED_SPECS. Raises ValueError on malformed
+    lines.
     """
     gres_nodes: dict[str, set[str]] = {}
     unknown_gres: set[str] = set()
@@ -196,8 +198,8 @@ def parse_sinfo(lines: list[str]) -> tuple[dict[str, set[str]], set[str]]:
 def parse_hostlist(hostlist: str) -> list[str]:
     """Parse a Slurm hostlist string into individual hostnames.
 
-    Handles single hosts ("gpu1"), bracket ranges ("gpu[1-3]"),
-    and mixed lists ("gpu[1,3-4]").
+    Handles single hosts ("gpu1"), bracket ranges ("gpu[1-3]"), and
+    mixed lists ("gpu[1,3-4]").
     """
     if re.match(r"^[a-z]+\d+$", hostlist):
         return [hostlist]
@@ -248,7 +250,8 @@ def _years_to_seconds(years: int) -> int:
 
 
 def _env_override[T](raw: dict, key: str, cast: Callable[[str], T], default: T) -> T:
-    """Read key from raw (falling back to default), then override with JOBCARBON_{KEY} env var if set."""
+    """Read key from raw (falling back to default), then override with
+    JOBCARBON_{KEY} env var if set."""
     value = cast(raw.get(key, default))
     raw_env = os.environ.get("JOBCARBON_" + key.upper())
     return cast(raw_env) if raw_env is not None else value
@@ -276,7 +279,8 @@ class Config:
         JOBCARBON_PROMETHEUS_URL        — Prometheus base URL
         JOBCARBON_STEP_SECONDS          — scrape resolution in seconds
         JOBCARBON_LOOKBACK_DAYS         — range for job/node discovery
-        JOBCARBON_MAX_SAMPLES           — max samples per Prometheus query chunk
+        JOBCARBON_MAX_SAMPLES           — max samples per Prometheus
+        query chunk
         """
         config_path = path if path is not None else get_config_file()
         with config_path.open("rb") as f:
@@ -316,8 +320,8 @@ class Config:
     def generate(cls, sinfo_lines: list[str]) -> str:
         """Generate a jobcarbon.toml from sinfo -h -o "%N %G" output.
 
-        Logs a warning for each unknown GPU GRES label and returns the rendered
-        TOML string.
+        Logs a warning for each unknown GPU GRES label and returns the
+        rendered TOML string.
         """
         gres_nodes, unknown_gres = parse_sinfo(sinfo_lines)
 
