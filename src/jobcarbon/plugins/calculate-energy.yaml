@@ -9,7 +9,7 @@ parameter-metadata:
   outputs:
     power:
       unit: kWh
-      description: Node energy consumed during the observation interval
+      description: Node energy consumed during the observation interval. Component sums may not be accurate across nodes
       aggregation-method:
         time: sum
         component: sum

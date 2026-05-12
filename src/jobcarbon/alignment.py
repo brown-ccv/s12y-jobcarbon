@@ -8,6 +8,8 @@ from .models import NodeData, Observation
 logger = logging.getLogger(__name__)
 
 
+# TODO(@broarr): Delete me! I don't think this abstraction is used at all, 
+#   just the frame data
 @dataclass
 class MetricFrame:
     metric_id: str
@@ -43,10 +45,11 @@ def align(node_data: NodeData, step_seconds: int) -> list[Observation]:
 
     combined["duration"] = combined["timestamp"].shift(-1) - combined["timestamp"]
 
-    if (combined["duration"].iloc[:-1] <= 0).any():
-        raise ValueError("non-positive duration between consecutive timestamps")
-
+    # NOTE(@broarr): Earliest timestamp can't calculate a duration, we have to set it explicitly
     combined.at[combined.index[-1], "duration"] = int(step_seconds)
+
+    if (combined["duration"] <= 0).any():
+        raise ValueError("non-positive duration between consecutive timestamps")
 
     combined["duration"] = combined["duration"].astype(int)
 

@@ -88,7 +88,7 @@ _EMBODIED_STEPS_GPU_ESTIMATED = [
     "sum-carbon",
 ]
 
-_OPERATIONAL_DEFAULTS: dict[NodeProfile, list[str]] = {
+_OPERATIONAL_DEFAULTS = {
     NodeProfile.FULL: [],
     NodeProfile.FULL_GPU: [],
     NodeProfile.HOST_ONLY: ["cpu_total", "mem_total", "cpu_allocated", "mem_allocated"],

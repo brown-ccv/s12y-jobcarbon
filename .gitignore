@@ -3,5 +3,9 @@ dist/
 *.egg-info/
 __pycache__/
 config/*.toml
-manifest.yaml
-output.yaml
+manifest*.yaml
+output*.yaml
+.ruff_cache/
+.pytest_cache/
+.jj/
+.venv/

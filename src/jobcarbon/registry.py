@@ -11,22 +11,23 @@ class MetricDefinition:
 # Nodes without Scaphandre data are skipped — no estimation fallback
 # All power metrics are in kilowatts
 # All memory metrics are in GiB
+# TODO(@broarr): consider using a cpu_utilization metric instead of the static allocated and total
 METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "cpu_power": MetricDefinition(
         id="cpu_power",
-        query="sum by (instance) (scaph_socket_power_microwatts{{instance=~'{node}:.*'}}) / 1e9",
+        query="avg_over_time((sum by (instance) (scaph_socket_power_microwatts{{instance=~'{node}:.*'}}) / 1e9)[{step}s:])",
     ),
     "dram_power": MetricDefinition(
         id="dram_power",
-        query="sum by (instance) (scaph_domain_power_microwatts{{domain_name='dram',instance=~'{node}:.*'}}) / 1e9",
+        query="avg_over_time((sum by (instance) (scaph_domain_power_microwatts{{domain_name='dram',instance=~'{node}:.*'}}) / 1e9)[{step}s:])",
     ),
     "host_power": MetricDefinition(
         id="host_power",
-        query="scaph_host_power_microwatts{{instance=~'{node}:.*'}} / 1e9",
+        query="avg_over_time((scaph_host_power_microwatts{{instance=~'{node}:.*'}} / 1e9)[{step}s:])",
     ),
     "gpu_power": MetricDefinition(
         id="gpu_power",
-        query="sum by (instance) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}} / 1e6)",
+        query="avg_over_time((sum by (instance) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}} / 1e6))[{step}s:])",
     ),
     "node_cpu_total": MetricDefinition(
         id="node_cpu_total",

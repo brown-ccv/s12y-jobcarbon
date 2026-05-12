@@ -22,6 +22,7 @@ def _get_nodes(
     engine: PrometheusEngine, jobid: str, lookback_days: int
 ) -> tuple[list[str], Window]:
     """Finds all nodes a job ran on and the time window in which the job ran"""
+    # TODO(@broarr): Check if job is running via Slurm prometheus exporter
     results = engine.query_lookback(
         METRIC_REGISTRY["job_cgroup"], jobid=jobid, lookback_days=lookback_days
     )
@@ -40,6 +41,12 @@ def _get_nodes(
 def _process_node(
     engine: PrometheusEngine, node: str, jobid: str, window: Window
 ) -> NodeData:
+    # TODO(@broarr): docstring
+    # TODO(@broarr): Some nodes have CPU power but not DRAM power, we need both for full
+    #  We always need to query for CPU, DRAM, GPU power. The only conditional query is
+    #  host power. Idea is to remove the for loop on 67, and replace with an if for the host_power
+    #  metric only
+    # TODO(@broarr): Helper function for instant queries with the non-empty and prom cast?
     dram_results = engine.query_range(METRIC_REGISTRY["dram_power"], window, node=node)
     gpu_results = engine.query_range(
         METRIC_REGISTRY["gpu_power"], window, node=node, jobid=jobid

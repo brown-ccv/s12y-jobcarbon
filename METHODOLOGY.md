@@ -45,6 +45,17 @@ The output field is named `power` in the manifest with unit kWh per scrape inter
 
 **Aggregation:** `power` is declared with `aggregation-method: {time: sum, component: sum}` in the Impact Framework manifest. Summing across timesteps gives the total energy consumed by the job on that node. Summing across components (nodes) gives the job-wide total. `carbon_operational` is derived per-timestep before aggregation, so there is no double-counting.
 
+### Power Sampling and Gap Handling
+
+Power metrics are fetched via Prometheus `query_range` at `step_seconds` intervals (default 60 s, configurable via `JOBCARBON_STEP_SECONDS`). Each returned value is the `avg_over_time` of all raw scrapes that fell within the preceding `step_seconds` window. When `step_seconds` equals the Prometheus scrape interval this is equivalent to a single instantaneous reading; when `step_seconds` is larger (as is typical for long jobs where manifest size is a concern) it averages all intermediate scrapes, reducing the influence of any single anomalous sample.
+
+Observations are inner-joined across all power metrics for a given node (`alignment.py`). A timestamp is dropped if any metric is absent at that step. After the join, each observation is assigned a `duration` equal to the gap to the next timestamp, with the final observation receiving `step_seconds` as its duration. This means:
+
+- **Sparse windows:** if raw scrapes are missing within a `step_seconds` window, `avg_over_time` averages fewer samples but still returns a point — the join is unaffected.
+- **Complete blackouts:** if an entire step window has no raw scrapes for any metric, that timestamp is absent from `query_range` output and is therefore absent from the join. The preceding observation's `duration` is extended to cover the gap, and its power value — an average of scrapes from the window *before* the gap — is used to estimate energy during the gap interval. This is an approximation; the true power during the gap is unknown.
+
+In practice, approximately 13% of observation windows have a duration larger than `step_seconds`, indicating gaps. Energy estimates for those intervals should be interpreted as extrapolations from the nearest available measurement.
+
 ### Grid Carbon Intensity
 
 Operational carbon per interval is:
