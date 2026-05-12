@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 
 import yaml
+from importlib import resources
 
 from .config import Config, PROCESS_SCALARS, MEM_SCALARS
 from .models import NodeData
@@ -12,15 +13,13 @@ from .alignment import align
 logger = logging.getLogger(__name__)
 
 
-def _get_plugin_dir() -> Path:
-    """Return the path to the plugins directory."""
-    return Path(__file__).parent / "plugins"
-
-
 def _load_plugin(name: str) -> dict:
-    """Load and parse a single plugin YAML file by step name."""
-    with (_get_plugin_dir() / f"{name}.yaml").open() as f:
-        return yaml.safe_load(f)
+    """Load and parse a single plugin YAML file from package resources."""
+    resource = resources.files("jobcarbon").joinpath("plugins").joinpath(f"{name}.yaml")
+    # resources.as_file ensures we have a real file system Path to read from.
+    with resources.as_file(resource) as path:
+        text = path.read_text(encoding="utf-8")
+    return yaml.safe_load(text)
 
 
 _OPERATIONAL_STEPS = {
