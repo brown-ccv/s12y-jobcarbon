@@ -76,3 +76,4 @@ PROFILE_METRICS: dict[NodeProfile, list[str]] = {
 }
 
 GPU_PROFILES = {NodeProfile.FULL_GPU, NodeProfile.HOST_ONLY_GPU}
+HOST_PROFILES = {NodeProfile.HOST_ONLY, NodeProfile.HOST_ONLY_GPU}

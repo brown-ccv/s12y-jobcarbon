@@ -1,6 +1,12 @@
 from .engine import PrometheusEngine, Window
 from .models import NodeData
-from .registry import GPU_PROFILES, METRIC_REGISTRY, PROFILE_METRICS, NodeProfile
+from .registry import (
+    GPU_PROFILES,
+    HOST_PROFILES,
+    METRIC_REGISTRY,
+    MetricDefinition,
+    NodeProfile,
+)
 
 
 def _require_nonempty[T](result: T, message: str) -> T:
@@ -9,14 +15,32 @@ def _require_nonempty[T](result: T, message: str) -> T:
     return result
 
 
-def _prom_float(result: list[dict]) -> float:
-    """Parse a Prometheus instant result value to float.
+def _prom_int(result: list[dict]) -> int:
+    """Parse a Prometheus instant result value to int.
 
     Prometheus encodes all values as strings on the wire, and integer
     metrics are sometimes represented as floats (e.g. "4.0"). This
     handles both cases
     """
-    return float(result[0]["value"][1])
+    return int(float(result[0]["value"][1]))
+
+
+def _query_instant(
+    engine: PrometheusEngine,
+    metric: MetricDefinition,
+    timestamp: int,
+    *,
+    message: str | None = None,
+    error: bool = True,
+    **query_kwargs,
+) -> int:
+    """Query a Prometheus instant metric, parse and return it."""
+    result = engine.query_instant(metric, timestamp, **query_kwargs)
+    if not result and error:
+        if message is None:
+            message = f"no {metric} data"
+        raise ValueError(message)
+    return _prom_int(result)
 
 
 def _get_nodes(
@@ -43,77 +67,78 @@ def _get_nodes(
 def _process_node(
     engine: PrometheusEngine, node: str, jobid: str, window: Window
 ) -> NodeData:
-    # TODO(@broarr): docstring
-    # TODO(@broarr): Some nodes have CPU power but not DRAM power, we need both for full
-    #  We always need to query for CPU, DRAM, GPU power. The only conditional query is
-    #  host power. Idea is to remove the for loop on 67, and replace with an if for the host_power
-    #  metric only
-    # TODO(@broarr): Helper function for instant queries with the non-empty and prom cast?
+    """Pulls the metrics for each node for a given window."""
+    cpu_results = engine.query_range(METRIC_REGISTRY["cpu_power"], window, node=node)
     dram_results = engine.query_range(METRIC_REGISTRY["dram_power"], window, node=node)
     gpu_results = engine.query_range(
         METRIC_REGISTRY["gpu_power"], window, node=node, jobid=jobid
     )
 
-    if dram_results and gpu_results:
+    if cpu_results and dram_results and gpu_results:
         profile = NodeProfile.FULL_GPU
-    elif dram_results and not gpu_results:
+    elif cpu_results and dram_results:
         profile = NodeProfile.FULL
-    elif not dram_results and gpu_results:
+    elif gpu_results:
         profile = NodeProfile.HOST_ONLY_GPU
     else:
         profile = NodeProfile.HOST_ONLY
 
     metrics = {}
+    if cpu_results:
+        metrics["cpu_power"] = cpu_results
     if dram_results:
         metrics["dram_power"] = dram_results
     if gpu_results:
         metrics["gpu_power"] = gpu_results
-    for mid in PROFILE_METRICS[profile]:
-        if mid not in metrics:
-            metrics[mid] = engine.query_range(
-                METRIC_REGISTRY[mid], window, node=node, jobid=jobid
-            )
+    if profile in HOST_PROFILES:
+        metrics["host_power"] = engine.query_range(
+            METRIC_REGISTRY["host_power"], window, node=node, jobid=jobid
+        )
 
-    cpu_total = _prom_float(
-        _require_nonempty(
-            engine.query_instant(
-                METRIC_REGISTRY["node_cpu_total"], window.end, node=node
-            ),
-            f"no cpu capacity data for node {node}",
-        )
+    cpu_total = _query_instant(
+        engine,
+        METRIC_REGISTRY["node_cpu_total"],
+        window.end,
+        node=node,
+        message=f"no cpu capacity data for node {node}",
     )
-    mem_total = _prom_float(
-        _require_nonempty(
-            engine.query_instant(
-                METRIC_REGISTRY["node_mem_total"], window.end, node=node
-            ),
-            f"no memory capacity data for node {node}",
-        )
+
+    mem_total = _query_instant(
+        engine,
+        METRIC_REGISTRY["node_mem_total"],
+        window.end,
+        node=node,
+        message=f"no memory capacity data for node {node}",
     )
-    cpu_allocated = _prom_float(
-        _require_nonempty(
-            engine.query_instant(
-                METRIC_REGISTRY["cgroup_cpus"], window.end, node=node, jobid=jobid
-            ),
-            f"no cpu allocation data for job {jobid} on node {node}",
-        )
+
+    cpu_allocated = _query_instant(
+        engine,
+        METRIC_REGISTRY["cgroup_cpus"],
+        window.end,
+        node=node,
+        jobid=jobid,
+        message=f"no cpu allocation data for job {jobid} on node {node}",
     )
-    mem_allocated = _prom_float(
-        _require_nonempty(
-            engine.query_instant(
-                METRIC_REGISTRY["cgroup_mem_total"], window.end, node=node, jobid=jobid
-            ),
-            f"no memory allocation data for job {jobid} on node {node}",
-        )
+
+    mem_allocated = _query_instant(
+        engine,
+        METRIC_REGISTRY["cgroup_mem_total"],
+        window.end,
+        node=node,
+        jobid=jobid,
+        message=f"no memory allocation data for job {jobid} on node {node}",
     )
 
     gpu_count = 0
     if profile in GPU_PROFILES:
-        gpu_count_result = engine.query_instant(
-            METRIC_REGISTRY["gpu_count"], window.end, node=node, jobid=jobid
+        gpu_count = _query_instant(
+            engine,
+            METRIC_REGISTRY["gpu_count"],
+            window.end,
+            error=False,
+            node=node,
+            jobid=jobid,
         )
-        if gpu_count_result:
-            gpu_count = _prom_float(gpu_count_result)
 
     return NodeData(
         node=node,

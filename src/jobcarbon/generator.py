@@ -1,6 +1,5 @@
 import dataclasses
 import logging
-from pathlib import Path
 
 import yaml
 from importlib import resources
