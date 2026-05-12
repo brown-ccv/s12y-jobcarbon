@@ -8,7 +8,7 @@ from .models import NodeData, Observation
 logger = logging.getLogger(__name__)
 
 
-# TODO(@broarr): Delete me! I don't think this abstraction is used at all, 
+# TODO(@broarr): Delete me! I don't think this abstraction is used at all,
 #   just the frame data
 @dataclass
 class MetricFrame:
@@ -17,7 +17,7 @@ class MetricFrame:
 
 
 def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
-    """Unpack a Prometheus result list into a DataFrame"""
+    """Unpack a Prometheus result list into a DataFrame."""
     rows = [
         {"timestamp": int(ts), metric_id: float(val)}
         for series in results
@@ -29,7 +29,7 @@ def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
 
 
 def align(node_data: NodeData, step_seconds: int) -> list[Observation]:
-    """Combine per-metric Prometheus results into a list of Observations"""
+    """Combine per-metric Prometheus results into a list of Observations."""
     metric_frames = [
         MetricFrame(metric_id=metric_id, frame=_to_dataframe(metric_id, results))
         for metric_id, results in node_data.metrics.items()
