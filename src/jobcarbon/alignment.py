@@ -1,19 +1,10 @@
 import logging
-from dataclasses import dataclass
 
 import pandas as pd
 
 from .models import NodeData, Observation
 
 logger = logging.getLogger(__name__)
-
-
-# TODO(@broarr): Delete me! I don't think this abstraction is used at all,
-#   just the frame data
-@dataclass
-class MetricFrame:
-    metric_id: str
-    frame: pd.DataFrame
 
 
 def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
@@ -31,16 +22,16 @@ def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
 def align(node_data: NodeData, step_seconds: int) -> list[Observation]:
     """Combine per-metric Prometheus results into a list of Observations."""
     metric_frames = [
-        MetricFrame(metric_id=metric_id, frame=_to_dataframe(metric_id, results))
+        _to_dataframe(metric_id, results)
         for metric_id, results in node_data.metrics.items()
     ]
 
     if not metric_frames:
         raise ValueError("no metric data available to align for node")
 
-    combined = metric_frames[0].frame
-    for mf in metric_frames[1:]:
-        combined = combined.merge(mf.frame, on="timestamp", how="inner")
+    combined, *frames = metric_frames
+    for frame in frames:
+        combined = combined.merge(frame, on="timestamp", how="inner")
     combined = combined.sort_values("timestamp")
 
     combined["duration"] = combined["timestamp"].shift(-1) - combined["timestamp"]
