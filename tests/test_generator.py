@@ -2,7 +2,13 @@ from unittest.mock import patch
 
 import pytest
 
-from jobcarbon.config import Config, _years_to_seconds
+from jobcarbon.config import (
+    Config,
+    PROCESS_SCALARS,
+    MEM_SCALARS,
+    _DEFAULT_YIELD_FACTOR,
+    _years_to_seconds,
+)
 from jobcarbon.models import NodeData, Observation
 from jobcarbon.registry import NodeProfile
 from jobcarbon.generator import (
@@ -22,6 +28,9 @@ def _cfg(**kwargs) -> Config:
         step_seconds=60,
         lookback_days=30,
         max_samples=10000,
+        yield_factor=_DEFAULT_YIELD_FACTOR,
+        process_scalars=PROCESS_SCALARS,
+        mem_scalars=MEM_SCALARS,
         _node_map={},
         embodied=False,
     )
@@ -37,6 +46,9 @@ def _cfg_with_gpu(entry: dict, embodied: bool = False) -> Config:
         step_seconds=60,
         lookback_days=30,
         max_samples=10000,
+        yield_factor=_DEFAULT_YIELD_FACTOR,
+        process_scalars=PROCESS_SCALARS,
+        mem_scalars=MEM_SCALARS,
         _node_map={"node1": entry},
         embodied=embodied,
     )

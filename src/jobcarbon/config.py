@@ -13,25 +13,25 @@ from .utils import get_config_file
 logger = logging.getLogger(__name__)
 
 _DEFAULT_GRID_CARBON_INTENSITY = 381  # gCO2eq/kWh, Rhode Island grid average 2023
+_DEFAULT_YIELD_FACTOR = 0.9
 
-# Yield-corrected gCO2eq/cm2 per TSMC process node
-# Source: Boakes et al. IEEE IEDM 2023
-# "samsung-8n" is not in Boakes; TSMC N7 is used as a proxy (logged as warning).
+# Raw wafer GWP in gCO2eq/cm2 (pre-yield-correction).
+# "samsung-8n" is not in Boakes et al.; TSMC N7 is used as a proxy.
 # "tsmc-12n" maps to N14 (architecturally closest).
-# "tsmc-n4" / "tsmc-n4p" map to N3 (closest documented in Boakes).
+# "tsmc-n4" / "tsmc-n4p" map to N3 (closest documented in Boakes et al.).
 PROCESS_SCALARS: dict[str, float] = {
-    "tsmc-n28": 1300,
+    "tsmc-n28": 1380,
     "tsmc-n20": 1470,
     "tsmc-n14": 1550,
     "tsmc-12n": 1550,
     "tsmc-n10": 1780,
-    "samsung-8n": 2220,
-    "tsmc-n7": 2220,
+    "samsung-8n": 2060,
+    "tsmc-n7": 2060,
     "tsmc-n5": 2420,
     "tsmc-n4": 2740,
     "tsmc-n4p": 2740,
     "tsmc-n3": 2740,
-    "tsmc-n2": 2850,
+    "tsmc-n2": 2730,
 }
 
 # gCO2eq/GB. Source: Li, Graif, Gupta, HotCarbon 2024
@@ -266,6 +266,9 @@ class Config:
     step_seconds: int
     lookback_days: int
     max_samples: int
+    yield_factor: float
+    process_scalars: dict[str, float] = field(repr=False)
+    mem_scalars: dict[str, float] = field(repr=False)
     _node_map: dict[str, dict] = field(repr=False)
     embodied: bool = False
 
@@ -279,8 +282,8 @@ class Config:
         JOBCARBON_PROMETHEUS_URL        — Prometheus base URL
         JOBCARBON_STEP_SECONDS          — scrape resolution in seconds
         JOBCARBON_LOOKBACK_DAYS         — range for job/node discovery
-        JOBCARBON_MAX_SAMPLES           — max samples per Prometheus
-        query chunk
+        JOBCARBON_MAX_SAMPLES           — max samples per Prometheus query chunk
+        JOBCARBON_YIELD_FACTOR          — wafer die yield for chip embodied carbon
         """
         config_path = path if path is not None else get_config_file()
         with config_path.open("rb") as f:
@@ -300,6 +303,7 @@ class Config:
         step_seconds = _env_override(raw, "step_seconds", int, _DEFAULT_STEP_SECONDS)
         lookback_days = _env_override(raw, "lookback_days", int, _DEFAULT_LOOKBACK_DAYS)
         max_samples = _env_override(raw, "max_samples", int, _DEFAULT_MAX_SAMPLES)
+        yield_factor = _env_override(raw, "yield_factor", float, _DEFAULT_YIELD_FACTOR)
         return cls(
             grid_carbon_intensity=gci,
             cpu_lifespan_seconds=_years_to_seconds(cpu_years),
@@ -308,6 +312,9 @@ class Config:
             step_seconds=step_seconds,
             lookback_days=lookback_days,
             max_samples=max_samples,
+            yield_factor=yield_factor,
+            process_scalars=dict(raw.get("process_scalars", PROCESS_SCALARS)),
+            mem_scalars=dict(raw.get("mem_scalars", MEM_SCALARS)),
             _node_map=_build_node_map(raw.get("gpus", [])),
             embodied=embodied,
         )
@@ -369,6 +376,28 @@ class Config:
                 "Max samples per Prometheus query chunk — override with JOBCARBON_MAX_SAMPLES"
             )
         )
+        doc.add("yield_factor", tomlkit.item(_DEFAULT_YIELD_FACTOR))
+        doc.add(
+            tomlkit.comment(
+                "Wafer die yield for chip embodied carbon — override with JOBCARBON_YIELD_FACTOR"
+            )
+        )
+        doc.add(tomlkit.nl())
+
+        process_scalar_table = tomlkit.table()
+        process_scalar_table.add(
+            tomlkit.comment("Raw wafer GWP in gCO2eq/cm2 (pre-yield-correction).")
+        )
+        for k, v in PROCESS_SCALARS.items():
+            process_scalar_table.add(k, v)
+        doc.add("process_scalars", process_scalar_table)
+        doc.add(tomlkit.nl())
+
+        memory_scalar_table = tomlkit.table()
+        memory_scalar_table.add(tomlkit.comment("gCO2eq/GB."))
+        for k, v in MEM_SCALARS.items():
+            memory_scalar_table.add(k, v)
+        doc.add("mem_scalars", memory_scalar_table)
         doc.add(tomlkit.nl())
 
         gpus_aot = tomlkit.aot()

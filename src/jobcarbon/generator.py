@@ -4,7 +4,7 @@ import logging
 import yaml
 from importlib import resources
 
-from .config import Config, PROCESS_SCALARS, MEM_SCALARS
+from .config import Config
 from .models import NodeData
 from .registry import GPU_PROFILES, NodeProfile
 from .alignment import align
@@ -77,6 +77,7 @@ _EMBODIED_STEPS_GPU_PCF = [
 _EMBODIED_STEPS_GPU_ESTIMATED = [
     "server-embodied",
     "gpu-chip-embodied",
+    "gpu-chip-yield-correct",
     "gpu-vram-embodied",
     "gpu-embodied-per-gpu",
     "gpu-embodied-total",
@@ -149,13 +150,13 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
 
     process = entry.get("process")
     mem_type = entry.get("mem_type")
-    if process not in PROCESS_SCALARS:
+    if process not in config.process_scalars:
         raise ValueError(
-            f"unknown process {process!r} — must be one of: {', '.join(sorted(PROCESS_SCALARS))}"
+            f"unknown process {process!r} — must be one of: {', '.join(sorted(config.process_scalars))}"
         )
-    if mem_type not in MEM_SCALARS:
+    if mem_type not in config.mem_scalars:
         raise ValueError(
-            f"unknown mem_type {mem_type!r} — must be one of: {', '.join(sorted(MEM_SCALARS))}"
+            f"unknown mem_type {mem_type!r} — must be one of: {', '.join(sorted(config.mem_scalars))}"
         )
     if process == "samsung-8n":
         logger.warning(
@@ -167,8 +168,9 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
         "gpu_count": node_data.gpu_count,
         "die_area_sq_cm": entry["die_area_sq_cm"],
         "vram_gb": entry["vram_gb"],
-        "process_scalar_carbon_per_sq_cm": PROCESS_SCALARS[process],
-        "mem_scalar_carbon_per_gb": MEM_SCALARS[mem_type],
+        "process_scalar_carbon_per_sq_cm": config.process_scalars[process],
+        "mem_scalar_carbon_per_gb": config.mem_scalars[mem_type],
+        "yield_factor": config.yield_factor,
     }
 
 
