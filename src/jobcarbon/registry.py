@@ -8,6 +8,13 @@ class MetricDefinition:
     query: str  # PromQL template string, parameters: {node}, {jobid}
 
 
+class NodeProfile(Enum):
+    FULL = "full"
+    FULL_GPU = "full_gpu"
+    HOST_ONLY = "host_only"
+    HOST_ONLY_GPU = "host_only_gpu"
+
+
 # Nodes without Scaphandre data are skipped — no estimation fallback
 # All power metrics are in kilowatts
 # All memory metrics are in GiB
@@ -37,10 +44,6 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         id="node_mem_total",
         query="slurm_node_mem_total{{node='{node}'}} / 1024",
     ),
-    "cgroup_window": MetricDefinition(
-        id="cgroup_window",
-        query="cgroup_cpu_total_seconds{{instance=~'{node}:.*',jobid='{jobid}'}}",
-    ),
     # step='',task='' filters to the job-level cgroup row, excluding sub-cgroup steps/tasks
     "job_cgroup": MetricDefinition(
         id="job_cgroup",
@@ -58,21 +61,6 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         id="gpu_count",
         query="count(count by (minor_number) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}}))",
     ),
-}
-
-
-class NodeProfile(Enum):
-    FULL = "full"
-    FULL_GPU = "full_gpu"
-    HOST_ONLY = "host_only"
-    HOST_ONLY_GPU = "host_only_gpu"
-
-
-PROFILE_METRICS: dict[NodeProfile, list[str]] = {
-    NodeProfile.FULL: ["cpu_power", "dram_power"],
-    NodeProfile.FULL_GPU: ["cpu_power", "dram_power", "gpu_power"],
-    NodeProfile.HOST_ONLY: ["host_power"],
-    NodeProfile.HOST_ONLY_GPU: ["host_power", "gpu_power"],
 }
 
 GPU_PROFILES = {NodeProfile.FULL_GPU, NodeProfile.HOST_ONLY_GPU}

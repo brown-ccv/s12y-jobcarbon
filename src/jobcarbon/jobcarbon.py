@@ -24,7 +24,7 @@ def _run_job(
     engine: PrometheusEngine, jobid: str, output: Path | None, config: Config
 ) -> None:
     """Run a single job manifest generation."""
-    node_data = process_job(engine, jobid, config.lookback_days)
+    node_data = process_job(engine, jobid, config)
     manifest = generate_manifest(jobid, node_data, config)
     content = dump(manifest)
     output_text(content, output)

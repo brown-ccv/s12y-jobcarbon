@@ -1,37 +1,19 @@
-from __future__ import annotations
-from dataclasses import dataclass
 from itertools import chain
 
 import requests
 
 from .config import Config
+from .models import PromResult, Window
 from .registry import MetricDefinition
 
 
-@dataclass(frozen=True)
-class Window:
-    start: int  # unix timestamp in seconds
-    end: int  # unix timestamp in seconds
-
-    @staticmethod
-    def chunk(window: Window, step_seconds: int, max_samples: int) -> list[Window]:
-        chunks = []
-        cur_start = window.start
-        chunk_duration = (max_samples - 1) * step_seconds
-        while cur_start <= window.end:
-            cur_end = min(cur_start + chunk_duration, window.end)
-            chunks.append(Window(cur_start, cur_end))
-            cur_start = cur_end + step_seconds
-        return chunks
-
-
 class PrometheusEngine:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config) -> None:
         self.base_url = config.prometheus_url.rstrip("/")
         self.step_seconds = config.step_seconds
         self.max_samples = config.max_samples
 
-    def _parse_response(self, response: requests.Response) -> list[dict]:
+    def _parse_response(self, response: requests.Response) -> PromResult:
         """Raise on HTTP or Prometheus-level errors and return the result
         list."""
         response.raise_for_status()
@@ -44,7 +26,7 @@ class PrometheusEngine:
 
     def _query_range_standard(
         self, metric: MetricDefinition, window: Window, node: str = "", jobid: str = ""
-    ) -> list[dict]:
+    ) -> PromResult:
         """Range query for jobs shorter than the max sample count."""
         query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
         response = requests.get(
@@ -64,7 +46,7 @@ class PrometheusEngine:
         window: Window,
         node: str = "",
         jobid: str = "",
-    ) -> list[dict]:
+    ) -> PromResult:
         """Range query for jobs beyond the max sample count."""
         chunks = Window.chunk(window, self.step_seconds, self.max_samples)
 
@@ -80,7 +62,7 @@ class PrometheusEngine:
         window: Window,
         node: str = "",
         jobid: str = "",
-    ) -> list[dict]:
+    ) -> PromResult:
         """Range query for a specific window of time."""
         duration = window.end - window.start
         num_samples = duration // self.step_seconds + 1
@@ -92,7 +74,7 @@ class PrometheusEngine:
 
     def query_instant(
         self, metric: MetricDefinition, time: int, node: str = "", jobid: str = ""
-    ) -> list[dict]:
+    ) -> PromResult:
         """Instant query at a specific Unix timestamp."""
         query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
         response = requests.get(
@@ -107,7 +89,7 @@ class PrometheusEngine:
         lookback_days: int,
         node: str = "",
         jobid: str = "",
-    ) -> list[dict]:
+    ) -> PromResult:
         """Lookback query, find metric in the last n days."""
         query = f"{metric.query.format(node=node, jobid=jobid, step=self.step_seconds)}[{lookback_days}d]"
         response = requests.get(

@@ -1,5 +1,11 @@
-from .engine import PrometheusEngine, Window
-from .models import NodeData
+import logging
+
+import requests
+
+from .config import Config
+from .electricity_maps import fetch_carbon_intensity_metric
+from .engine import PrometheusEngine
+from .models import NodeData, PromResult, Window
 from .registry import (
     GPU_PROFILES,
     HOST_PROFILES,
@@ -8,14 +14,10 @@ from .registry import (
     NodeProfile,
 )
 
-
-def _require_nonempty[T](result: T, message: str) -> T:
-    if not result:
-        raise ValueError(message)
-    return result
+logger = logging.getLogger(__name__)
 
 
-def _prom_int(result: list[dict]) -> int:
+def _prom_int(result: PromResult) -> int:
     """Parse a Prometheus instant result value to int.
 
     Prometheus encodes all values as strings on the wire, and integer
@@ -29,25 +31,24 @@ def _query_instant(
     engine: PrometheusEngine,
     metric: MetricDefinition,
     timestamp: int,
-    *,
+    node: str = "",
+    jobid: str = "",
     message: str | None = None,
     error: bool = True,
-    **query_kwargs,
 ) -> int:
     """Query a Prometheus instant metric, parse and return it."""
-    result = engine.query_instant(metric, timestamp, **query_kwargs)
-    if not result and error:
-        if message is None:
-            message = f"no {metric} data"
-        raise ValueError(message)
+    result = engine.query_instant(metric, timestamp, node=node, jobid=jobid)
+    if not result:
+        if error:
+            raise ValueError(message or f"no {metric} data")
+        return 0
     return _prom_int(result)
 
 
 def _get_nodes(
     engine: PrometheusEngine, jobid: str, lookback_days: int
 ) -> tuple[list[str], Window]:
-    """Finds all nodes a job ran on and the time window in which the job
-    ran."""
+    """Find all nodes a job ran on and the time window in which it ran."""
     # TODO(@broarr): Check if job is running via Slurm prometheus exporter
     results = engine.query_lookback(
         METRIC_REGISTRY["job_cgroup"], jobid=jobid, lookback_days=lookback_days
@@ -57,17 +58,15 @@ def _get_nodes(
             f"no cgroup data found for job {jobid} in the last {lookback_days} days"
         )
     nodes = sorted({r["metric"]["instance"].split(":")[0] for r in results})
-    window = Window(
-        start=int(min(v[0] for r in results for v in r["values"])),
-        end=int(max(v[0] for r in results for v in r["values"])),
-    )
+    timestamps = [v[0] for r in results for v in r["values"]]
+    window = Window(start=int(min(timestamps)), end=int(max(timestamps)))
     return nodes, window
 
 
 def _process_node(
     engine: PrometheusEngine, node: str, jobid: str, window: Window
 ) -> NodeData:
-    """Pulls the metrics for each node for a given window."""
+    """Pull the metrics for a node over the given window."""
     cpu_results = engine.query_range(METRIC_REGISTRY["cpu_power"], window, node=node)
     dram_results = engine.query_range(METRIC_REGISTRY["dram_power"], window, node=node)
     gpu_results = engine.query_range(
@@ -83,7 +82,7 @@ def _process_node(
     else:
         profile = NodeProfile.HOST_ONLY
 
-    metrics = {}
+    metrics: dict[str, PromResult] = {}
     if cpu_results:
         metrics["cpu_power"] = cpu_results
     if dram_results:
@@ -143,18 +142,35 @@ def _process_node(
     return NodeData(
         node=node,
         profile=profile,
+        window=window,
         metrics=metrics,
-        cpu_total=int(cpu_total),
-        mem_total=int(mem_total),
-        cpu_allocated=int(cpu_allocated),
-        mem_allocated=int(mem_allocated),
-        gpu_count=int(gpu_count),
+        cpu_total=cpu_total,
+        mem_total=mem_total,
+        cpu_allocated=cpu_allocated,
+        mem_allocated=mem_allocated,
+        gpu_count=gpu_count,
     )
 
 
-def process_job(
-    engine: PrometheusEngine, jobid: str, lookback_days: int
-) -> list[NodeData]:
+def process_job(engine: PrometheusEngine, jobid: str, config: Config) -> list[NodeData]:
     """Return one NodeData per node that ran the given Slurm job."""
-    nodes, window = _get_nodes(engine, jobid, lookback_days)
-    return [_process_node(engine, node, jobid, window) for node in nodes]
+    nodes, window = _get_nodes(engine, jobid, config.lookback_days)
+    node_data = [_process_node(engine, node, jobid, window) for node in nodes]
+    if not config.electricity_maps_api_key:
+        return node_data
+    try:
+        series = fetch_carbon_intensity_metric(
+            config.electricity_maps_zone,
+            window.start,
+            window.end,
+            config.step_seconds,
+            config.electricity_maps_api_key,
+        )
+    except (ValueError, requests.RequestException) as e:
+        logger.warning(
+            "Electricity Maps lookup failed, using static grid intensity: %s", e
+        )
+        return node_data
+    for nd in node_data:
+        nd.metrics["grid_carbon_intensity"] = series
+    return node_data

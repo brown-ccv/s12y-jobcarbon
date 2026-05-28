@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 
 def output_text(content: str, path: Path | None) -> None:
@@ -22,3 +23,9 @@ def get_config_file() -> Path:
         if p and Path(p).is_file():
             return Path(p)
     raise FileNotFoundError("No jobcarbon config file found")
+
+
+def nearest_neighbor(key: int, lookup: dict[int, Any]) -> Any:
+    """Return the value from lookup at the closest matching key."""
+    nearest = min(lookup.keys(), key=lambda t: abs(t - key))
+    return lookup[nearest]

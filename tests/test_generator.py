@@ -6,10 +6,11 @@ from jobcarbon.config import (
     Config,
     PROCESS_SCALARS,
     MEM_SCALARS,
-    _DEFAULT_YIELD_FACTOR,
+    DEFAULT_YIELD_FACTOR,
+    DEFAULT_ELECTRICITY_MAPS_ZONE,
     _years_to_seconds,
 )
-from jobcarbon.models import NodeData, Observation
+from jobcarbon.models import NodeData, Observation, Window
 from jobcarbon.registry import NodeProfile
 from jobcarbon.generator import (
     _pipeline_steps,
@@ -28,10 +29,12 @@ def _cfg(**kwargs) -> Config:
         step_seconds=60,
         lookback_days=30,
         max_samples=10000,
-        yield_factor=_DEFAULT_YIELD_FACTOR,
+        yield_factor=DEFAULT_YIELD_FACTOR,
+        electricity_maps_zone=DEFAULT_ELECTRICITY_MAPS_ZONE,
+        electricity_maps_api_key=None,
         process_scalars=PROCESS_SCALARS,
         mem_scalars=MEM_SCALARS,
-        _node_map={},
+        node_map={},
         embodied=False,
     )
     return Config(**{**defaults, **kwargs})
@@ -46,10 +49,12 @@ def _cfg_with_gpu(entry: dict, embodied: bool = False) -> Config:
         step_seconds=60,
         lookback_days=30,
         max_samples=10000,
-        yield_factor=_DEFAULT_YIELD_FACTOR,
+        yield_factor=DEFAULT_YIELD_FACTOR,
+        electricity_maps_zone=DEFAULT_ELECTRICITY_MAPS_ZONE,
+        electricity_maps_api_key=None,
         process_scalars=PROCESS_SCALARS,
         mem_scalars=MEM_SCALARS,
-        _node_map={"node1": entry},
+        node_map={"node1": entry},
         embodied=embodied,
     )
 
@@ -63,6 +68,7 @@ def _node(profile: NodeProfile, gpu_count: int = 0) -> NodeData:
         mem_total=128,
         cpu_allocated=8,
         mem_allocated=32,
+        window=Window(start=1000, end=2000),
         gpu_count=gpu_count,
     )
 
@@ -141,6 +147,13 @@ def test_node_defaults_operational_full_only_has_gci():
         assert set(defaults.keys()) == {"grid_carbon_intensity"}
 
 
+def test_node_defaults_omits_gci_when_per_observation_series_present():
+    node = _node(NodeProfile.FULL)
+    node.metrics["grid_carbon_intensity"] = [{"metric": {}, "values": [(1000, 250.0)]}]
+    defaults = _node_defaults(node, _cfg())
+    assert "grid_carbon_intensity" not in defaults
+
+
 def test_node_defaults_operational_host_only_includes_allocation_fields():
     for profile in (NodeProfile.HOST_ONLY, NodeProfile.HOST_ONLY_GPU):
         defaults = _node_defaults(_node(profile), _cfg())
@@ -216,7 +229,16 @@ def test_generate_manifest_embodied_aggregation():
 def test_generate_manifest_plugin_union_across_profiles():
     nodes = [
         _node(NodeProfile.FULL),
-        NodeData("node2", NodeProfile.HOST_ONLY, {}, 32, 128, 8, 32),
+        NodeData(
+            node="node2",
+            profile=NodeProfile.HOST_ONLY,
+            metrics={},
+            cpu_total=32,
+            mem_total=128,
+            cpu_allocated=8,
+            mem_allocated=32,
+            window=Window(start=1000, end=2000),
+        ),
     ]
     with patch("jobcarbon.generator.align", return_value=_FAKE_OBS):
         manifest = generate_manifest("42", nodes, _cfg())

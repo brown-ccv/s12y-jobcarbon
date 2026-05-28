@@ -1,27 +1,20 @@
 import dataclasses
 import logging
+from typing import Any, cast
 
 import yaml
 from importlib import resources
 
-from .config import Config
+from .config import Config, EstimatedGpuSpec, is_pcf_spec
 from .models import NodeData
 from .registry import GPU_PROFILES, NodeProfile
 from .alignment import align
 
+type Manifest = dict[str, Any]
+
 logger = logging.getLogger(__name__)
 
-
-def _load_plugin(name: str) -> dict:
-    """Load and parse a single plugin YAML file from package resources."""
-    resource = resources.files("jobcarbon").joinpath("plugins").joinpath(f"{name}.yaml")
-    # resources.as_file ensures we have a real file system Path to read from.
-    with resources.as_file(resource) as path:
-        text = path.read_text(encoding="utf-8")
-    return yaml.safe_load(text)
-
-
-_OPERATIONAL_STEPS = {
+OPERATIONAL_STEPS = {
     NodeProfile.FULL: [
         "sum-scaph-power",
         "duration-to-hours",
@@ -59,13 +52,13 @@ _OPERATIONAL_STEPS = {
     ],
 }
 
-_EMBODIED_STEPS_SERVER_ONLY = [
+EMBODIED_STEPS_SERVER_ONLY = [
     "server-embodied",
     "sum-embodied",
     "sum-carbon",
 ]
 
-_EMBODIED_STEPS_GPU_PCF = [
+EMBODIED_STEPS_GPU_PCF = [
     "server-embodied",
     "gpu-embodied-pcf",
     "gpu-embodied-per-second",
@@ -74,7 +67,7 @@ _EMBODIED_STEPS_GPU_PCF = [
     "sum-carbon",
 ]
 
-_EMBODIED_STEPS_GPU_ESTIMATED = [
+EMBODIED_STEPS_GPU_ESTIMATED = [
     "server-embodied",
     "gpu-chip-embodied",
     "gpu-chip-yield-correct",
@@ -87,7 +80,7 @@ _EMBODIED_STEPS_GPU_ESTIMATED = [
     "sum-carbon",
 ]
 
-_OPERATIONAL_DEFAULTS = {
+OPERATIONAL_DEFAULTS = {
     NodeProfile.FULL: [],
     NodeProfile.FULL_GPU: [],
     NodeProfile.HOST_ONLY: ["cpu_total", "mem_total", "cpu_allocated", "mem_allocated"],
@@ -99,40 +92,49 @@ _OPERATIONAL_DEFAULTS = {
     ],
 }
 
-_AGGREGATION_OPERATIONAL = {
+AGGREGATION_OPERATIONAL = {
     "metrics": ["duration", "power", "carbon_operational"],
     "type": "both",
 }
 
-_AGGREGATION_EMBODIED = {
+AGGREGATION_EMBODIED = {
     "metrics": ["duration", "power", "carbon_operational", "carbon_embodied", "carbon"],
     "type": "both",
 }
 
 
+def _load_plugin(name: str) -> Manifest:
+    """Load and parse a single plugin YAML file from package resources."""
+    resource = resources.files("jobcarbon").joinpath("plugins").joinpath(f"{name}.yaml")
+    # resources.as_file ensures we have a real file system Path to read from.
+    with resources.as_file(resource) as path:
+        text = path.read_text(encoding="utf-8")
+    return yaml.safe_load(text)
+
+
 def _embodied_steps(node_data: NodeData, config: Config) -> list[str]:
     """Return the ordered embodied pipeline steps for this node's profile."""
     if node_data.profile not in GPU_PROFILES:
-        return _EMBODIED_STEPS_SERVER_ONLY
+        return EMBODIED_STEPS_SERVER_ONLY
     entry = config.gpu_for_node(node_data.node)
     if entry is None:
         raise ValueError(
             f"node '{node_data.node}' has a GPU profile but is not in gpu_config"
         )
-    if "pcf_carbon_per_gpu" in entry:
-        return _EMBODIED_STEPS_GPU_PCF
-    return _EMBODIED_STEPS_GPU_ESTIMATED
+    if is_pcf_spec(entry):
+        return EMBODIED_STEPS_GPU_PCF
+    return EMBODIED_STEPS_GPU_ESTIMATED
 
 
 def _pipeline_steps(node_data: NodeData, config: Config) -> list[str]:
     """Return the full ordered pipeline step list for this node."""
-    steps = list(_OPERATIONAL_STEPS[node_data.profile])
+    steps = list(OPERATIONAL_STEPS[node_data.profile])
     if config.embodied:
         steps.extend(_embodied_steps(node_data, config))
     return steps
 
 
-def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
+def _gpu_defaults(node_data: NodeData, config: Config) -> Manifest:
     """Return embodied GPU defaults to inject into the node defaults block."""
     if node_data.profile not in GPU_PROFILES:
         return {}
@@ -142,14 +144,15 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
             f"node '{node_data.node}' has a GPU profile but is not in gpu_config"
         )
 
-    if "pcf_carbon_per_gpu" in entry:
+    if is_pcf_spec(entry):
         return {
             "gpu_count": node_data.gpu_count,
             "pcf_carbon_per_gpu": entry["pcf_carbon_per_gpu"],
         }
 
-    process = entry.get("process")
-    mem_type = entry.get("mem_type")
+    estimated = cast(EstimatedGpuSpec, entry)
+    process = estimated.get("process")
+    mem_type = estimated.get("mem_type")
     if process not in config.process_scalars:
         raise ValueError(
             f"unknown process {process!r} — must be one of: {', '.join(sorted(config.process_scalars))}"
@@ -161,24 +164,26 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> dict:
     if process == "samsung-8n":
         logger.warning(
             "GPU '%s': samsung-8n is not in Boakes et al.; using TSMC N7 scalar as proxy.",
-            entry.get("gpu_model", "unknown"),
+            estimated.get("gpu_model", "unknown"),
         )
 
     return {
         "gpu_count": node_data.gpu_count,
-        "die_area_sq_cm": entry["die_area_sq_cm"],
-        "vram_gb": entry["vram_gb"],
+        "die_area_sq_cm": estimated["die_area_sq_cm"],
+        "vram_gb": estimated["vram_gb"],
         "process_scalar_carbon_per_sq_cm": config.process_scalars[process],
         "mem_scalar_carbon_per_gb": config.mem_scalars[mem_type],
         "yield_factor": config.yield_factor,
     }
 
 
-def _node_defaults(node_data: NodeData, config: Config) -> dict:
+def _node_defaults(node_data: NodeData, config: Config) -> Manifest:
     """Build the defaults block for a single node, gating embodied fields on
     config."""
-    defaults = {"grid_carbon_intensity": config.grid_carbon_intensity}
-    for field in _OPERATIONAL_DEFAULTS[node_data.profile]:
+    defaults: dict[str, Any] = {}
+    if "grid_carbon_intensity" not in node_data.metrics:
+        defaults["grid_carbon_intensity"] = config.grid_carbon_intensity
+    for field in OPERATIONAL_DEFAULTS[node_data.profile]:
         defaults[field] = getattr(node_data, field)
     if config.embodied:
         defaults.update(
@@ -195,7 +200,7 @@ def _node_defaults(node_data: NodeData, config: Config) -> dict:
     return defaults
 
 
-def _build_node(node_data: NodeData, config: Config) -> dict:
+def _build_node(node_data: NodeData, config: Config) -> Manifest:
     """Assemble the pipeline, defaults, and inputs entry for a single node."""
     steps = _pipeline_steps(node_data, config)
     observations = align(node_data, config.step_seconds)
@@ -209,16 +214,18 @@ def _build_node(node_data: NodeData, config: Config) -> dict:
     }
 
 
-def generate_manifest(jobid: str, node_data: list[NodeData], config: Config) -> dict:
+def generate_manifest(
+    jobid: str, node_data: list[NodeData], config: Config
+) -> Manifest:
     """Build one IF manifest for an entire job, with one tree child per
     node."""
-    all_plugins = {}
+    all_plugins: dict[str, Manifest] = {}
     for nd in node_data:
         for step in _pipeline_steps(nd, config):
             if step not in all_plugins:
                 all_plugins[step] = _load_plugin(step)
 
-    aggregation = _AGGREGATION_EMBODIED if config.embodied else _AGGREGATION_OPERATIONAL
+    aggregation = AGGREGATION_EMBODIED if config.embodied else AGGREGATION_OPERATIONAL
 
     return {
         "name": f"job{jobid}",

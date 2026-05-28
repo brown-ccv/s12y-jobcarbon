@@ -1,10 +1,38 @@
 import pytest
+import responses
 from unittest.mock import MagicMock
 
 from conftest import prom_instant, prom_series
-from jobcarbon.engine import Window
+from jobcarbon.config import (
+    Config,
+    PROCESS_SCALARS,
+    MEM_SCALARS,
+    DEFAULT_YIELD_FACTOR,
+    DEFAULT_ELECTRICITY_MAPS_ZONE,
+    _years_to_seconds,
+)
 from jobcarbon.loader import _get_nodes, _process_node, process_job
+from jobcarbon.models import Window
 from jobcarbon.registry import NodeProfile
+
+
+def _cfg(**kwargs) -> Config:
+    defaults = dict(
+        grid_carbon_intensity=381.0,
+        cpu_lifespan_seconds=_years_to_seconds(5),
+        gpu_lifespan_seconds=_years_to_seconds(5),
+        prometheus_url="http://localhost:9390",
+        step_seconds=60,
+        lookback_days=30,
+        max_samples=10000,
+        yield_factor=DEFAULT_YIELD_FACTOR,
+        electricity_maps_zone=DEFAULT_ELECTRICITY_MAPS_ZONE,
+        electricity_maps_api_key=None,
+        process_scalars=PROCESS_SCALARS,
+        mem_scalars=MEM_SCALARS,
+        node_map={},
+    )
+    return Config(**{**defaults, **kwargs})
 
 
 def _make_process_node_engine(
@@ -96,5 +124,50 @@ def test_process_job_returns_one_nodedata_per_node():
         prom_series("node2:9306", [(1000, 1.0)]),
     ]
 
-    result = process_job(engine, "42", 30)
+    result = process_job(engine, "42", _cfg())
     assert len(result) == 2
+
+
+@responses.activate
+def test_process_job_injects_carbon_intensity():
+    responses.add(
+        responses.GET,
+        "https://api.electricitymap.org/v3/carbon-intensity/past-range",
+        json={
+            "zone": "US-NE-ISNE",
+            "data": [
+                {"carbonIntensity": 250, "datetime": "1970-01-01T00:16:40.000Z"},
+            ],
+        },
+    )
+    engine = _make_process_node_engine()
+    engine.query_lookback.return_value = [
+        prom_series("node1:9306", [(1000, 1.0)]),
+        prom_series("node2:9306", [(1000, 1.0)]),
+    ]
+
+    result = process_job(engine, "42", _cfg(electricity_maps_api_key="test-key"))
+
+    for nd in result:
+        assert "grid_carbon_intensity" in nd.metrics
+        assert nd.metrics["grid_carbon_intensity"] == [
+            {"metric": {}, "values": [(1000, 250.0)]}
+        ]
+
+
+@responses.activate
+def test_process_job_skips_intensity_on_fetch_failure():
+    responses.add(
+        responses.GET,
+        "https://api.electricitymap.org/v3/carbon-intensity/past-range",
+        status=401,
+    )
+    engine = _make_process_node_engine()
+    engine.query_lookback.return_value = [
+        prom_series("node1:9306", [(1000, 1.0)]),
+    ]
+
+    result = process_job(engine, "42", _cfg(electricity_maps_api_key="test-key"))
+
+    assert len(result) == 1
+    assert "grid_carbon_intensity" not in result[0].metrics

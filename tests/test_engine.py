@@ -2,7 +2,8 @@ import pytest
 import responses
 from types import SimpleNamespace
 
-from jobcarbon.engine import PrometheusEngine, Window
+from jobcarbon.engine import PrometheusEngine
+from jobcarbon.models import Window
 from jobcarbon.registry import MetricDefinition
 
 BASE_URL = "http://localhost:9999"

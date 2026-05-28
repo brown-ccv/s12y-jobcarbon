@@ -1,13 +1,34 @@
 from dataclasses import dataclass
+from typing import Any
 
 from .registry import NodeProfile
+
+type PromResult = list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class Window:
+    start: int  # unix timestamp in seconds
+    end: int  # unix timestamp in seconds
+
+    @staticmethod
+    def chunk(window: "Window", step_seconds: int, max_samples: int) -> list["Window"]:
+        chunks = []
+        cur_start = window.start
+        chunk_duration = (max_samples - 1) * step_seconds
+        while cur_start <= window.end:
+            cur_end = min(cur_start + chunk_duration, window.end)
+            chunks.append(Window(cur_start, cur_end))
+            cur_start = cur_end + step_seconds
+        return chunks
 
 
 @dataclass
 class NodeData:
     node: str
-    profile: NodeProfile | None
-    metrics: dict[str, list[dict[str, str]]]
+    profile: NodeProfile
+    window: Window
+    metrics: dict[str, PromResult]
     cpu_total: int
     mem_total: int
     cpu_allocated: int
@@ -23,3 +44,4 @@ class Observation:
     dram_power: float | None = None
     host_power: float | None = None
     gpu_power: float | None = None
+    grid_carbon_intensity: float | None = None

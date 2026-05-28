@@ -2,12 +2,12 @@ import logging
 
 import pandas as pd
 
-from .models import NodeData, Observation
+from .models import NodeData, Observation, PromResult
 
 logger = logging.getLogger(__name__)
 
 
-def _to_dataframe(metric_id: str, results: list[dict]) -> pd.DataFrame:
+def _to_dataframe(metric_id: str, results: PromResult) -> pd.DataFrame:
     """Unpack a Prometheus result list into a DataFrame."""
     rows = [
         {"timestamp": int(ts), metric_id: float(val)}
@@ -25,10 +25,6 @@ def align(node_data: NodeData, step_seconds: int) -> list[Observation]:
         _to_dataframe(metric_id, results)
         for metric_id, results in node_data.metrics.items()
     ]
-
-    if not metric_frames:
-        raise ValueError("no metric data available to align for node")
-
     combined, *frames = metric_frames
     for frame in frames:
         combined = combined.merge(frame, on="timestamp", how="inner")
@@ -52,6 +48,7 @@ def align(node_data: NodeData, step_seconds: int) -> list[Observation]:
             dram_power=row.get("dram_power"),
             host_power=row.get("host_power"),
             gpu_power=row.get("gpu_power"),
+            grid_carbon_intensity=row.get("grid_carbon_intensity"),
         )
         for row in combined.to_dict(orient="records")
     ]

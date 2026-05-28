@@ -5,6 +5,7 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, TypeGuard, TypedDict, cast
 
 import tomlkit
 
@@ -12,8 +13,15 @@ from .utils import get_config_file
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_GRID_CARBON_INTENSITY = 381  # gCO2eq/kWh, Rhode Island grid average 2023
-_DEFAULT_YIELD_FACTOR = 0.9
+DEFAULT_GRID_CARBON_INTENSITY = 381  # gCO2eq/kWh, Rhode Island grid average 2023
+DEFAULT_YIELD_FACTOR = 0.9
+DEFAULT_CPU_LIFESPAN_YEARS = 5
+DEFAULT_GPU_LIFESPAN_YEARS = 5
+DEFAULT_PROMETHEUS_URL = "http://localhost:9390"
+DEFAULT_STEP_SECONDS = 60
+DEFAULT_LOOKBACK_DAYS = 30
+DEFAULT_MAX_SAMPLES = 10000
+DEFAULT_ELECTRICITY_MAPS_ZONE = "US-NE-ISNE"
 
 # Raw wafer GWP in gCO2eq/cm2 (pre-yield-correction).
 # "samsung-8n" is not in Boakes et al.; TSMC N7 is used as a proxy.
@@ -42,9 +50,25 @@ MEM_SCALARS: dict[str, float] = {
     "hbm3": 900,
 }
 
+
+class PcfGpuSpec(TypedDict):
+    gpu_model: str
+    pcf_carbon_per_gpu: float
+
+
+class EstimatedGpuSpec(TypedDict):
+    gpu_model: str
+    die_area_sq_cm: float
+    vram_gb: float
+    process: str
+    mem_type: str
+
+
+type GpuSpec = PcfGpuSpec | EstimatedGpuSpec
+
 # Bootstrap seed for create-config, keyed by Slurm GRES label.
 # Used only to populate new TOMLs; not consulted at runtime.
-SEED_SPECS: dict[str, dict] = {
+SEED_SPECS: dict[str, GpuSpec] = {
     "quadro_rtx_6000": {
         "gpu_model": "NVIDIA Quadro RTX 6000",
         "die_area_sq_cm": 7.54,
@@ -155,6 +179,178 @@ SEED_SPECS: dict[str, dict] = {
 }
 
 
+@dataclass(frozen=True)
+class Config:
+    grid_carbon_intensity: float
+    cpu_lifespan_seconds: int
+    gpu_lifespan_seconds: int
+    prometheus_url: str
+    step_seconds: int
+    lookback_days: int
+    max_samples: int
+    yield_factor: float
+    electricity_maps_zone: str
+    electricity_maps_api_key: str | None
+    process_scalars: dict[str, float] = field(repr=False)
+    mem_scalars: dict[str, float] = field(repr=False)
+    node_map: dict[str, GpuSpec] = field(repr=False)
+    embodied: bool = False
+
+    @classmethod
+    def load(cls, path: Path | None = None, embodied: bool = False) -> "Config":
+        """Load jobcarbon.toml; env vars override file values.
+
+        JOBCARBON_GRID_CARBON_INTENSITY — gCO2eq/kWh
+        JOBCARBON_CPU_LIFESPAN_YEARS    — server amortisation period
+        JOBCARBON_GPU_LIFESPAN_YEARS    — GPU amortisation period
+        JOBCARBON_PROMETHEUS_URL        — Prometheus base URL
+        JOBCARBON_STEP_SECONDS          — scrape resolution in seconds
+        JOBCARBON_LOOKBACK_DAYS         — range for job/node discovery
+        JOBCARBON_MAX_SAMPLES           — max samples per Prometheus query chunk
+        JOBCARBON_YIELD_FACTOR          — wafer die yield for chip embodied carbon
+        JOBCARBON_ELECTRICITY_MAPS_ZONE — Electricity Maps zone identifier
+        JOBCARBON_ELECTRICITY_MAPS_API_KEY — Electricity Maps API key (env only, no file fallback)
+        """
+        config_path = path if path is not None else get_config_file()
+        with config_path.open("rb") as f:
+            raw = tomllib.load(f)
+        gci = _env_override(
+            raw, "grid_carbon_intensity", float, DEFAULT_GRID_CARBON_INTENSITY
+        )
+        cpu_years = _env_override(
+            raw, "cpu_lifespan_years", int, DEFAULT_CPU_LIFESPAN_YEARS
+        )
+        gpu_years = _env_override(
+            raw, "gpu_lifespan_years", int, DEFAULT_GPU_LIFESPAN_YEARS
+        )
+        prometheus_url = _env_override(
+            raw, "prometheus_url", str, DEFAULT_PROMETHEUS_URL
+        )
+        step_seconds = _env_override(raw, "step_seconds", int, DEFAULT_STEP_SECONDS)
+        lookback_days = _env_override(raw, "lookback_days", int, DEFAULT_LOOKBACK_DAYS)
+        max_samples = _env_override(raw, "max_samples", int, DEFAULT_MAX_SAMPLES)
+        yield_factor = _env_override(raw, "yield_factor", float, DEFAULT_YIELD_FACTOR)
+        electricity_maps_zone = _env_override(
+            raw, "electricity_maps_zone", str, DEFAULT_ELECTRICITY_MAPS_ZONE
+        )
+        return cls(
+            grid_carbon_intensity=gci,
+            cpu_lifespan_seconds=_years_to_seconds(cpu_years),
+            gpu_lifespan_seconds=_years_to_seconds(gpu_years),
+            prometheus_url=prometheus_url,
+            step_seconds=step_seconds,
+            lookback_days=lookback_days,
+            max_samples=max_samples,
+            yield_factor=yield_factor,
+            electricity_maps_zone=electricity_maps_zone,
+            process_scalars=dict(raw.get("process_scalars", PROCESS_SCALARS)),
+            mem_scalars=dict(raw.get("mem_scalars", MEM_SCALARS)),
+            node_map=_build_node_map(raw.get("gpus", [])),
+            embodied=embodied,
+            electricity_maps_api_key=os.environ.get(
+                "JOBCARBON_ELECTRICITY_MAPS_API_KEY"
+            ),
+        )
+
+    def gpu_for_node(self, node: str) -> GpuSpec | None:
+        """Return the [[gpus]] entry for a given node hostname, or None."""
+        return self.node_map.get(node)
+
+    @classmethod
+    def generate(cls, sinfo_lines: list[str]) -> str:
+        """Generate a jobcarbon.toml from sinfo -h -o "%N %G" output.
+
+        Logs a warning for each unknown GPU GRES label and returns the
+        rendered TOML string.
+        """
+        gres_nodes, unknown_gres = parse_sinfo(sinfo_lines)
+
+        for gres_name in unknown_gres:
+            logger.warning("unknown GPU GRES %r — skipping", gres_name)
+
+        doc = tomlkit.document()
+        doc.add(
+            tomlkit.comment(
+                'Generated by: sinfo -h -o "%N %G" | jobcarbon create-config'
+            )
+        )
+        doc.add(
+            tomlkit.comment("See METHODOLOGY.md for field definitions and sources.")
+        )
+        doc.add(tomlkit.nl())
+        doc.add(
+            tomlkit.comment(
+                "gCO2eq/kWh — override with JOBCARBON_GRID_CARBON_INTENSITY"
+            )
+        )
+        doc.add("grid_carbon_intensity", tomlkit.item(DEFAULT_GRID_CARBON_INTENSITY))
+        doc.add(tomlkit.nl())
+        doc.add(
+            tomlkit.comment(
+                "Prometheus base URL — override with JOBCARBON_PROMETHEUS_URL"
+            )
+        )
+        doc.add("prometheus_url", tomlkit.item(DEFAULT_PROMETHEUS_URL))
+        doc.add(
+            tomlkit.comment(
+                "Scrape resolution in seconds — override with JOBCARBON_STEP_SECONDS"
+            )
+        )
+        doc.add("step_seconds", tomlkit.item(DEFAULT_STEP_SECONDS))
+        doc.add(
+            tomlkit.comment(
+                "Range for job/node discovery — override with JOBCARBON_LOOKBACK_DAYS"
+            )
+        )
+        doc.add("lookback_days", tomlkit.item(DEFAULT_LOOKBACK_DAYS))
+        doc.add(
+            tomlkit.comment(
+                "Max samples per Prometheus query chunk — override with JOBCARBON_MAX_SAMPLES"
+            )
+        )
+        doc.add("max_samples", tomlkit.item(DEFAULT_MAX_SAMPLES))
+        doc.add(
+            tomlkit.comment(
+                "Wafer die yield for chip embodied carbon — override with JOBCARBON_YIELD_FACTOR"
+            )
+        )
+        doc.add("yield_factor", tomlkit.item(DEFAULT_YIELD_FACTOR))
+        doc.add(
+            tomlkit.comment(
+                "Electricity Maps zone identifier — override with JOBCARBON_ELECTRICITY_MAPS_ZONE"
+            )
+        )
+        doc.add("electricity_maps_zone", tomlkit.item(DEFAULT_ELECTRICITY_MAPS_ZONE))
+        doc.add(tomlkit.nl())
+
+        process_scalar_table = tomlkit.table()
+        process_scalar_table.add(
+            tomlkit.comment("Raw wafer GWP in gCO2eq/cm2 (pre-yield-correction).")
+        )
+        for k, v in PROCESS_SCALARS.items():
+            process_scalar_table.add(k, v)
+        doc.add("process_scalars", process_scalar_table)
+        doc.add(tomlkit.nl())
+
+        memory_scalar_table = tomlkit.table()
+        memory_scalar_table.add(tomlkit.comment("gCO2eq/GB."))
+        for k, v in MEM_SCALARS.items():
+            memory_scalar_table.add(k, v)
+        doc.add("mem_scalars", memory_scalar_table)
+        doc.add(tomlkit.nl())
+
+        gpus_aot = tomlkit.aot()
+        for gres_name, spec in SEED_SPECS.items():
+            entry = tomlkit.table()
+            for k, v in spec.items():
+                entry.add(k, v)
+            entry.add("nodes", sorted(gres_nodes.get(gres_name, set())))
+            gpus_aot.append(entry)
+
+        doc.add("gpus", gpus_aot)
+        return tomlkit.dumps(doc)
+
+
 def _parse_gres(gres: str) -> list[str]:
     """Parse a Slurm GRES string into GPU type names.
 
@@ -170,6 +366,42 @@ def _parse_gres(gres: str) -> list[str]:
         if len(fields) >= 2 and fields[1]:
             gpu_types.append(fields[1])
     return gpu_types
+
+
+def _build_node_map(entries: list[dict[str, Any]]) -> dict[str, GpuSpec]:
+    """Invert [[gpus]] entries into a node-hostname to entry dict.
+
+    Raises ValueError if the same hostname appears in two entries.
+    """
+    node_map = {}
+    for entry in entries:
+        for node in entry.get("nodes", []):
+            if node in node_map:
+                raise ValueError(
+                    f"duplicate node hostname '{node}': appears in entries for "
+                    f"'{node_map[node]['gpu_model']}' and '{entry['gpu_model']}'"
+                )
+            node_map[node] = cast(GpuSpec, entry)
+    return node_map
+
+
+def _years_to_seconds(years: int) -> int:
+    """Convert a lifespan in years to whole seconds, using 365 days/year."""
+    return years * 365 * 24 * 3600
+
+
+def _env_override[T](
+    raw: dict[str, Any], key: str, cast: Callable[[str], T], default: T
+) -> T:
+    """Read key from raw (falling back to default), then override with
+    JOBCARBON_{KEY} env var if set."""
+    value = cast(raw.get(key, default))
+    raw_env = os.environ.get("JOBCARBON_" + key.upper())
+    return cast(raw_env) if raw_env is not None else value
+
+
+def is_pcf_spec(entry: GpuSpec) -> TypeGuard[PcfGpuSpec]:
+    return "pcf_carbon_per_gpu" in entry
 
 
 def parse_sinfo(lines: list[str]) -> tuple[dict[str, set[str]], set[str]]:
@@ -217,196 +449,3 @@ def parse_hostlist(hostlist: str) -> list[str]:
             start, end = pattern.split("-", 1)
             hosts.extend(f"{prefix}{i}" for i in range(int(start), int(end) + 1))
     return hosts
-
-
-def _build_node_map(entries: list[dict]) -> dict[str, dict]:
-    """Invert [[gpus]] entries into a node-hostname to entry dict.
-
-    Raises ValueError if the same hostname appears in two entries.
-    """
-    node_map = {}
-    for entry in entries:
-        for node in entry.get("nodes", []):
-            if node in node_map:
-                raise ValueError(
-                    f"duplicate node hostname '{node}': appears in entries for "
-                    f"'{node_map[node]['gpu_model']}' and '{entry['gpu_model']}'"
-                )
-            node_map[node] = entry
-    return node_map
-
-
-_DEFAULT_CPU_LIFESPAN_YEARS = 5
-_DEFAULT_GPU_LIFESPAN_YEARS = 5
-_DEFAULT_PROMETHEUS_URL = "http://localhost:9390"
-_DEFAULT_STEP_SECONDS = 60
-_DEFAULT_LOOKBACK_DAYS = 30
-_DEFAULT_MAX_SAMPLES = 10000
-
-
-def _years_to_seconds(years: int) -> int:
-    """Convert a lifespan in years to whole seconds, using 365 days/year."""
-    return years * 365 * 24 * 3600
-
-
-def _env_override[T](raw: dict, key: str, cast: Callable[[str], T], default: T) -> T:
-    """Read key from raw (falling back to default), then override with
-    JOBCARBON_{KEY} env var if set."""
-    value = cast(raw.get(key, default))
-    raw_env = os.environ.get("JOBCARBON_" + key.upper())
-    return cast(raw_env) if raw_env is not None else value
-
-
-@dataclass(frozen=True)
-class Config:
-    grid_carbon_intensity: float
-    cpu_lifespan_seconds: int
-    gpu_lifespan_seconds: int
-    prometheus_url: str
-    step_seconds: int
-    lookback_days: int
-    max_samples: int
-    yield_factor: float
-    process_scalars: dict[str, float] = field(repr=False)
-    mem_scalars: dict[str, float] = field(repr=False)
-    _node_map: dict[str, dict] = field(repr=False)
-    embodied: bool = False
-
-    @classmethod
-    def load(cls, path: Path | None = None, embodied: bool = False) -> "Config":
-        """Load jobcarbon.toml; env vars override file values.
-
-        JOBCARBON_GRID_CARBON_INTENSITY — gCO2eq/kWh
-        JOBCARBON_CPU_LIFESPAN_YEARS    — server amortisation period
-        JOBCARBON_GPU_LIFESPAN_YEARS    — GPU amortisation period
-        JOBCARBON_PROMETHEUS_URL        — Prometheus base URL
-        JOBCARBON_STEP_SECONDS          — scrape resolution in seconds
-        JOBCARBON_LOOKBACK_DAYS         — range for job/node discovery
-        JOBCARBON_MAX_SAMPLES           — max samples per Prometheus query chunk
-        JOBCARBON_YIELD_FACTOR          — wafer die yield for chip embodied carbon
-        """
-        config_path = path if path is not None else get_config_file()
-        with config_path.open("rb") as f:
-            raw = tomllib.load(f)
-        gci = _env_override(
-            raw, "grid_carbon_intensity", float, _DEFAULT_GRID_CARBON_INTENSITY
-        )
-        cpu_years = _env_override(
-            raw, "cpu_lifespan_years", int, _DEFAULT_CPU_LIFESPAN_YEARS
-        )
-        gpu_years = _env_override(
-            raw, "gpu_lifespan_years", int, _DEFAULT_GPU_LIFESPAN_YEARS
-        )
-        prometheus_url = _env_override(
-            raw, "prometheus_url", str, _DEFAULT_PROMETHEUS_URL
-        )
-        step_seconds = _env_override(raw, "step_seconds", int, _DEFAULT_STEP_SECONDS)
-        lookback_days = _env_override(raw, "lookback_days", int, _DEFAULT_LOOKBACK_DAYS)
-        max_samples = _env_override(raw, "max_samples", int, _DEFAULT_MAX_SAMPLES)
-        yield_factor = _env_override(raw, "yield_factor", float, _DEFAULT_YIELD_FACTOR)
-        return cls(
-            grid_carbon_intensity=gci,
-            cpu_lifespan_seconds=_years_to_seconds(cpu_years),
-            gpu_lifespan_seconds=_years_to_seconds(gpu_years),
-            prometheus_url=prometheus_url,
-            step_seconds=step_seconds,
-            lookback_days=lookback_days,
-            max_samples=max_samples,
-            yield_factor=yield_factor,
-            process_scalars=dict(raw.get("process_scalars", PROCESS_SCALARS)),
-            mem_scalars=dict(raw.get("mem_scalars", MEM_SCALARS)),
-            _node_map=_build_node_map(raw.get("gpus", [])),
-            embodied=embodied,
-        )
-
-    def gpu_for_node(self, node: str) -> dict | None:
-        """Return the [[gpus]] entry for a given node hostname, or None."""
-        return self._node_map.get(node)
-
-    @classmethod
-    def generate(cls, sinfo_lines: list[str]) -> str:
-        """Generate a jobcarbon.toml from sinfo -h -o "%N %G" output.
-
-        Logs a warning for each unknown GPU GRES label and returns the
-        rendered TOML string.
-        """
-        gres_nodes, unknown_gres = parse_sinfo(sinfo_lines)
-
-        for gres_name in unknown_gres:
-            logger.warning("unknown GPU GRES %r — skipping", gres_name)
-
-        doc = tomlkit.document()
-        doc.add(
-            tomlkit.comment(
-                'Generated by: sinfo -h -o "%N %G" | jobcarbon create-config'
-            )
-        )
-        doc.add(
-            tomlkit.comment("See METHODOLOGY.md for field definitions and sources.")
-        )
-        doc.add(tomlkit.nl())
-        doc.add("grid_carbon_intensity", tomlkit.item(_DEFAULT_GRID_CARBON_INTENSITY))
-        doc.add(
-            tomlkit.comment(
-                "gCO2eq/kWh — override with JOBCARBON_GRID_CARBON_INTENSITY"
-            )
-        )
-        doc.add(tomlkit.nl())
-        doc.add("prometheus_url", tomlkit.item(_DEFAULT_PROMETHEUS_URL))
-        doc.add(
-            tomlkit.comment(
-                "Prometheus base URL — override with JOBCARBON_PROMETHEUS_URL"
-            )
-        )
-        doc.add("step_seconds", tomlkit.item(_DEFAULT_STEP_SECONDS))
-        doc.add(
-            tomlkit.comment(
-                "Scrape resolution in seconds — override with JOBCARBON_STEP_SECONDS"
-            )
-        )
-        doc.add("lookback_days", tomlkit.item(_DEFAULT_LOOKBACK_DAYS))
-        doc.add(
-            tomlkit.comment(
-                "Range for job/node discovery — override with JOBCARBON_LOOKBACK_DAYS"
-            )
-        )
-        doc.add("max_samples", tomlkit.item(_DEFAULT_MAX_SAMPLES))
-        doc.add(
-            tomlkit.comment(
-                "Max samples per Prometheus query chunk — override with JOBCARBON_MAX_SAMPLES"
-            )
-        )
-        doc.add("yield_factor", tomlkit.item(_DEFAULT_YIELD_FACTOR))
-        doc.add(
-            tomlkit.comment(
-                "Wafer die yield for chip embodied carbon — override with JOBCARBON_YIELD_FACTOR"
-            )
-        )
-        doc.add(tomlkit.nl())
-
-        process_scalar_table = tomlkit.table()
-        process_scalar_table.add(
-            tomlkit.comment("Raw wafer GWP in gCO2eq/cm2 (pre-yield-correction).")
-        )
-        for k, v in PROCESS_SCALARS.items():
-            process_scalar_table.add(k, v)
-        doc.add("process_scalars", process_scalar_table)
-        doc.add(tomlkit.nl())
-
-        memory_scalar_table = tomlkit.table()
-        memory_scalar_table.add(tomlkit.comment("gCO2eq/GB."))
-        for k, v in MEM_SCALARS.items():
-            memory_scalar_table.add(k, v)
-        doc.add("mem_scalars", memory_scalar_table)
-        doc.add(tomlkit.nl())
-
-        gpus_aot = tomlkit.aot()
-        for gres_name, spec in SEED_SPECS.items():
-            entry = tomlkit.table()
-            for k, v in spec.items():
-                entry.add(k, v)
-            entry.add("nodes", sorted(gres_nodes.get(gres_name, set())))
-            gpus_aot.append(entry)
-
-        doc.add("gpus", gpus_aot)
-        return tomlkit.dumps(doc)
