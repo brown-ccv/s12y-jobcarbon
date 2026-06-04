@@ -30,26 +30,6 @@ def _run_job(
     output_text(content, output)
 
 
-@app.command("create-config")
-def create_config(
-    output: Annotated[
-        Path | None, typer.Option(help="output file (default: stdout)")
-    ] = None,
-) -> None:
-    """Generate jobcarbon.toml from sinfo output.
-
-    Usage: sinfo -h -o "%N %G" | jobcarbon create-config
-    """
-    if sys.stdin.isatty():
-        logger.error(
-            'No piped data. Use: sinfo -h -o "%%N %%G" | jobcarbon create-config'
-        )
-        raise typer.Exit(1)
-
-    content = Config.generate(sys.stdin.readlines())
-    output_text(content, output)
-
-
 @app.command()
 def batch(
     job_ids: Annotated[list[str], typer.Argument(help="list of Slurm job ids")],

@@ -11,9 +11,10 @@ The code is a proper Python package at `src/jobcarbon/` installed in editable mo
 
 ```
 src/jobcarbon/__init__.py     # package init; exports Typer app
- src/jobcarbon/jobcarbon.py    # Typer CLI: commands manifest, batch, create-config
+src/jobcarbon/jobcarbon.py    # Typer CLI: commands manifest, batch
+src/jobcarbon/create_config.py # jobcarbon-create-config entry point
 src/jobcarbon/config.py       # Config dataclass (loaded from jobcarbon.toml + env overrides);
-                              #   also parse_sinfo / parse_hostlist for create-config
+                              #   also parse_sinfo / parse_hostlist for jobcarbon-create-config
 src/jobcarbon/models.py       # NodeData and Observation dataclasses
 src/jobcarbon/engine.py       # Prometheus HTTP client (query, query_range, query_instant)
 src/jobcarbon/loader.py       # node discovery + per-node NodeData assembly
@@ -34,7 +35,7 @@ uv run ruff format src/                     # format
  uv run jobcarbon manifest $JOB_ID                # generate manifest, prints to stdout
  uv run jobcarbon manifest $JOB_ID --embodied     # include embodied carbon estimate
 uv run jobcarbon batch $JOB_ID ...          # multiple jobs, one .yaml each
-uv run jobcarbon create-config              # generate jobcarbon.toml from sinfo output
+uv run jobcarbon-create-config              # generate jobcarbon.toml from sinfo output
 ```
 
 No build step required No type checker is configured

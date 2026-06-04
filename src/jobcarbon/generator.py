@@ -98,7 +98,13 @@ AGGREGATION_OPERATIONAL = {
 }
 
 AGGREGATION_EMBODIED = {
-    "metrics": ["duration", "energy", "carbon_operational", "carbon_embodied", "carbon"],
+    "metrics": [
+        "duration",
+        "energy",
+        "carbon_operational",
+        "carbon_embodied",
+        "carbon",
+    ],
     "type": "both",
 }
 
