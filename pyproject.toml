@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 jobcarbon = "jobcarbon:app"
+jobcarbon-create-config = "jobcarbon.create_config:app"
 
 [build-system]
 requires = ["hatchling"]
