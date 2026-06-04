@@ -3,7 +3,7 @@ method: Multiply
 config:
   input-parameters:
     - grid_carbon_intensity
-    - power
+    - energy
   output-parameter: carbon_operational
 parameter-metadata:
   outputs:

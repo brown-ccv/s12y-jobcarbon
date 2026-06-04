@@ -93,12 +93,12 @@ OPERATIONAL_DEFAULTS = {
 }
 
 AGGREGATION_OPERATIONAL = {
-    "metrics": ["duration", "power", "carbon_operational"],
+    "metrics": ["duration", "energy", "carbon_operational"],
     "type": "both",
 }
 
 AGGREGATION_EMBODIED = {
-    "metrics": ["duration", "power", "carbon_operational", "carbon_embodied", "carbon"],
+    "metrics": ["duration", "energy", "carbon_operational", "carbon_embodied", "carbon"],
     "type": "both",
 }
 

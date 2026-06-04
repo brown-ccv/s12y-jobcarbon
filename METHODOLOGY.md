@@ -38,12 +38,12 @@ Power measurements are drawn from Prometheus at the 60-second scrape resolution 
 For each 60-second observation interval, per-node energy is computed as:
 
 ```
-power (kWh) = node_power_watts / 1000 * duration_s / 3600
+energy (kWh) = node_power_watts / 1000 * duration_s / 3600
 ```
 
-The output field is named `power` in the manifest with unit kWh per scrape interval
+The output field is named `energy` in the manifest with unit kWh per scrape interval
 
-**Aggregation:** `power` is declared with `aggregation-method: {time: sum, component: sum}` in the Impact Framework manifest. Summing across timesteps gives the total energy consumed by the job on that node. Summing across components (nodes) gives the job-wide total. `carbon_operational` is derived per-timestep before aggregation, so there is no double-counting.
+**Aggregation:** `energy` is declared with `aggregation-method: {time: sum, component: sum}` in the Impact Framework manifest. Summing across timesteps gives the total energy consumed by the job on that node. Summing across components (nodes) gives the job-wide total. `carbon_operational` is derived per-timestep before aggregation, so there is no double-counting.
 
 ### Power Sampling and Gap Handling
 
@@ -61,7 +61,7 @@ In practice, approximately 13% of observation windows have a duration larger tha
 Operational carbon per interval is:
 
 ```
-carbon_operational (gCO2eq) = grid_carbon_intensity (gCO2eq/kWh) × power (kWh)
+carbon_operational (gCO2eq) = grid_carbon_intensity (gCO2eq/kWh) × energy (kWh)
 ```
 
 The grid carbon intensity is hardcoded at **381 gCO2eq/kWh**. This value is derived from the [EPA eGRID 2022][egrid2022] dataset, which reports an annual average CO2-equivalent emission rate of **840 lb CO2eq/MWh** for Rhode Island 
