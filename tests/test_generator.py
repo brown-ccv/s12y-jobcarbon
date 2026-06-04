@@ -212,7 +212,7 @@ def test_generate_manifest_operational_aggregation():
         manifest = generate_manifest("42", [_node(NodeProfile.FULL)], _cfg())
     assert manifest["aggregation"]["metrics"] == [
         "duration",
-        "power",
+        "energy",
         "carbon_operational",
     ]
 

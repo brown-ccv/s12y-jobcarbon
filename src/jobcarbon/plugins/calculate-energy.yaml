@@ -4,10 +4,10 @@ config:
   input-parameters:
     - duration_hours
     - node_power_kw
-  output-parameter: power
+  output-parameter: energy
 parameter-metadata:
   outputs:
-    power:
+    energy:
       unit: kWh
       description: Node energy consumed during the observation interval. Component sums may not be accurate across nodes
       aggregation-method:
