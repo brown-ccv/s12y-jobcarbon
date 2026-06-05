@@ -1,6 +1,6 @@
 [project]
 name = "jobcarbon"
-version = "0.1.0"
+version = "1.2.1"
 description = "generate Impact Framework observations from OSCAR jobs"
 readme = "README.md"
 requires-python = ">=3.12"
