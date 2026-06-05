@@ -16,7 +16,7 @@ def get_config_file() -> Path:
     xdg_cfg = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
 
     try:
-        spack_prefix = Path(__file__).resolve().parents[3]
+        spack_prefix = Path(__file__).resolve().parents[4]
         spack_share_cfg = spack_prefix / "share" / "jobcarbon" / "config.toml"
     except IndexError:
         spack_share_cfg = None
