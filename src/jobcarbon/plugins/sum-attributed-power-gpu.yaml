@@ -1,7 +1,7 @@
 path: builtin
-method: Multiply
+method: Sum
 config:
   input-parameters:
-    - host_power
-    - reservation_share
+    - attributed_cpu_power
+    - gpu_power
   output-parameter: node_power_kw

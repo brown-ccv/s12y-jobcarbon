@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
 
-from .registry import NodeProfile
-
 type PromResult = list[dict[str, Any]]
 
 
@@ -26,7 +24,6 @@ class Window:
 @dataclass
 class NodeData:
     node: str
-    profile: NodeProfile
     window: Window
     metrics: dict[str, PromResult]
     cpu_total: int

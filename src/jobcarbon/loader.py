@@ -7,11 +7,8 @@ from .electricity_maps import fetch_carbon_intensity_metric
 from .engine import PrometheusEngine
 from .models import NodeData, PromResult, Window
 from .registry import (
-    GPU_PROFILES,
-    HOST_PROFILES,
     METRIC_REGISTRY,
     MetricDefinition,
-    NodeProfile,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,26 +70,14 @@ def _process_node(
         METRIC_REGISTRY["gpu_power"], window, node=node, jobid=jobid
     )
 
-    if cpu_results and dram_results and gpu_results:
-        profile = NodeProfile.FULL_GPU
-    elif cpu_results and dram_results:
-        profile = NodeProfile.FULL
-    elif gpu_results:
-        profile = NodeProfile.HOST_ONLY_GPU
-    else:
-        profile = NodeProfile.HOST_ONLY
+    if not cpu_results:
+        raise ValueError(f"no cpu_power data for node {node}")
 
-    metrics: dict[str, PromResult] = {}
-    if cpu_results:
-        metrics["cpu_power"] = cpu_results
+    metrics: dict[str, PromResult] = {"cpu_power": cpu_results}
     if dram_results:
         metrics["dram_power"] = dram_results
     if gpu_results:
         metrics["gpu_power"] = gpu_results
-    if profile in HOST_PROFILES:
-        metrics["host_power"] = engine.query_range(
-            METRIC_REGISTRY["host_power"], window, node=node, jobid=jobid
-        )
 
     cpu_total = _query_instant(
         engine,
@@ -129,7 +114,7 @@ def _process_node(
     )
 
     gpu_count = 0
-    if profile in GPU_PROFILES:
+    if gpu_results:
         gpu_count = _query_instant(
             engine,
             METRIC_REGISTRY["gpu_count"],
@@ -141,7 +126,6 @@ def _process_node(
 
     return NodeData(
         node=node,
-        profile=profile,
         window=window,
         metrics=metrics,
         cpu_total=cpu_total,

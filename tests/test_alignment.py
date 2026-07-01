@@ -2,7 +2,6 @@ import pytest
 
 from jobcarbon.alignment import align
 from jobcarbon.models import NodeData, Window
-from jobcarbon.registry import NodeProfile
 
 
 def _make_series(timestamps, values=None):
@@ -19,7 +18,6 @@ def test_alignment_variable_duration():
     }
     nd = NodeData(
         node=node,
-        profile=NodeProfile.FULL,
         metrics=metrics,
         cpu_total=1,
         mem_total=1,
@@ -40,7 +38,6 @@ def test_alignment_non_positive_interval_raises():
     }
     nd = NodeData(
         node="n",
-        profile=NodeProfile.FULL,
         metrics=metrics_bad,
         cpu_total=1,
         mem_total=1,

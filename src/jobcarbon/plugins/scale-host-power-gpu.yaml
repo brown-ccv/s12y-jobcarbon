@@ -1,7 +1,0 @@
-path: builtin
-method: Multiply
-config:
-  input-parameters:
-    - host_power
-    - reservation_share
-  output-parameter: scaled_host_power_kw

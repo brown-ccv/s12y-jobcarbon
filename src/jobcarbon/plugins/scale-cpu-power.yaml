@@ -1,0 +1,7 @@
+path: builtin
+method: Multiply
+config:
+  input-parameters:
+    - cpu_power
+    - cpu_share
+  output-parameter: attributed_cpu_power

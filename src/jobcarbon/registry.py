@@ -1,18 +1,10 @@
 from dataclasses import dataclass
-from enum import Enum
 
 
 @dataclass(frozen=True)
 class MetricDefinition:
     id: str
     query: str  # PromQL template string, parameters: {node}, {jobid}
-
-
-class NodeProfile(Enum):
-    FULL = "full"
-    FULL_GPU = "full_gpu"
-    HOST_ONLY = "host_only"
-    HOST_ONLY_GPU = "host_only_gpu"
 
 
 # Nodes without Scaphandre data are skipped — no estimation fallback
@@ -27,10 +19,6 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "dram_power": MetricDefinition(
         id="dram_power",
         query="avg_over_time((sum by (instance) (scaph_domain_power_microwatts{{domain_name='dram',instance=~'{node}:.*'}}) / 1e9)[{step}s:])",
-    ),
-    "host_power": MetricDefinition(
-        id="host_power",
-        query="avg_over_time((scaph_host_power_microwatts{{instance=~'{node}:.*'}} / 1e9)[{step}s:])",
     ),
     "gpu_power": MetricDefinition(
         id="gpu_power",
@@ -63,5 +51,4 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     ),
 }
 
-GPU_PROFILES = {NodeProfile.FULL_GPU, NodeProfile.HOST_ONLY_GPU}
-HOST_PROFILES = {NodeProfile.HOST_ONLY, NodeProfile.HOST_ONLY_GPU}
+

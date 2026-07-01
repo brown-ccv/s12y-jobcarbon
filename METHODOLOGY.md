@@ -14,22 +14,19 @@ The following are **explicitly out of scope**:
 
 Per-job attribution of network and power/storage carbon is not readily available from the Prometheus telemetry in scope. [Li et al., HotCarbon 2024][hotcarbon2024] models network and disk as constants. This tool does not add any constants for network or disk
 
-## 2. Power Telemetry and Node Profiles
+## 2. Power Telemetry and Pipeline Assembly
 
-Power measurements are drawn from Prometheus at the 60-second scrape resolution used by Oscar's monitoring stack. The tool selects a measurement profile for each node at job time by probing Prometheus for the presence of component-level metrics:
+Power measurements are drawn from Prometheus at the 60-second scrape resolution used by Oscar's monitoring stack. For each node, the tool probes which power domain metrics are available and assembles a pipeline from what is found. There is no fixed profile enum — the pipeline is built dynamically per node.
 
-| Profile | Condition | Power source(s) |
-|---|---|---|
-| `full` | CPU and DRAM component power present | Scaphandre CPU + DRAM |
-| `full_gpu` | CPU, DRAM, and GPU power present | Scaphandre CPU + DRAM + Nvidia GPU |
-| `host_only` | Only whole-host power present | Scaphandre host power, scaled by reservation share |
-| `host_only_gpu` | Whole-host and GPU power present | Scaphandre host power (scaled) + Nvidia GPU |
+**CPU power** is read from Scaphandre's `scaph_socket_power_microwatts`. This metric is available on all Oscar nodes and its absence is treated as a hard error. It reports whole-socket power and must be scaled by the job's CPU reservation share before use.
 
-**CPU and DRAM power** are read from Scaphandre's `scaph_socket_power_microwatts` and `scaph_domain_power_microwatts{domain_name="dram"}` metrics respectively Both are reported in microwatts and converted to watts within the Impact Framework pipeline
+**DRAM power** is read from Scaphandre's `scaph_domain_power_microwatts{domain_name="dram"}`. This metric is present on a subset of nodes. When present it is scaled by the job's memory reservation share. When absent the DRAM attribution step is omitted entirely.
 
-**Whole-host power** is read from Scaphandre's `scaph_host_power_microwatts`, also in microwatts, converted the same way
+**GPU power** is read from `nvidia_gpu_power_usage_milliwatts`, filtered to the job's assigned GPUs via the `jobid` label and summed across all GPUs on that node. Because the PromQL query filters by `jobid`, GPU power is already fully attributed to the job and requires no further scaling. GPU power is present only on GPU nodes.
 
-**GPU power** is read from `nvidia_gpu_power_usage_milliwatts`, filtered to the job's cgroup via the `jobid` label and summed across all GPUs assigned to the job. The PromQL query converts milliwatts to microwatts, making GPU power unit-consistent with all Scaphandre metrics before the in-pipeline conversion to watts
+`scaph_host_power_microwatts` (whole-node power) is **not used**. It carries no per-job attribution information that cannot be derived more accurately from the per-domain metrics above.
+
+All power metrics are reported in microwatts (or milliwatts for GPU) and converted to kilowatts within the Impact Framework pipeline.
 
 ## 3. Operational Carbon
 
@@ -68,24 +65,56 @@ The grid carbon intensity is hardcoded at **381 gCO2eq/kWh**. This value is deri
 
 This is a static annual average. It does not reflect the temporal variation in grid carbon intensity across hours, days, or seasons The plan to replace this with temporally-resolved marginal intensity (MOER) is described in `FUTURE.md`
 
-## 4. `host_only` Reservation-Share Attribution
+## 4. Per-Component Power Attribution
 
-When only whole-host power is available, the fraction of host power attributed to a job is computed as:
+Each Scaphandre power domain metric reports whole-component power — not the job's share. Each domain is scaled independently by the job's reservation share of the resource that domain measures before the attributed values are summed to produce `node_power_kw`.
 
-```
-reservation_share = 0.7 * (cpu_allocated / cpu_total)
-                  + 0.3 * (mem_allocated / mem_total)
-```
+### CPU attribution
 
 ```
-node_power_kw = host_power × reservation_share
+cpu_share            = cpu_allocated / cpu_total
+attributed_cpu_power = cpu_power × cpu_share
 ```
 
-where `cpu_allocated` and `cpu_total` are core counts, and `mem_allocated` and `mem_total` are both in GiB (so the ratio is dimensionless)
+### DRAM attribution (when DRAM domain metric is present)
 
-**The 0.7/0.3 split is a placeholder**. It encodes a general prior that CPU activity is a larger driver of host power draw than memory activity. It has not been validated against measured data on Oscar's specific hardware. Any results derived from the `host_only` or `host_only_gpu` profiles should be interpreted with this limitation in mind
+```
+mem_share              = mem_allocated / mem_total
+attributed_dram_power  = dram_power × mem_share
+```
 
-The correct approach — offline empirical characterization using nodes that have both `host_power` and component-level Scaphandre data — is planned See `FUTURE.md §2`
+### GPU attribution (when GPU metric is present)
+
+GPU power is already filtered to the job's assigned GPUs by the PromQL query (`jobid` label). On Oscar, MIG is not used, so each GPU is either fully assigned to a job or not assigned at all. No further scaling is applied.
+
+```
+attributed_gpu_power = gpu_power   (sum of job's assigned GPUs, directly from Prometheus)
+```
+
+### Node power
+
+```
+node_power_kw = attributed_cpu_power
+              + attributed_dram_power   (if DRAM domain present)
+              + attributed_gpu_power    (if GPU present)
+```
+
+### Pipeline variants
+
+The Impact Framework pipeline for each node is assembled from whichever steps are applicable:
+
+| Available domains | Pipeline steps |
+|---|---|
+| CPU only | `cpu-share → scale-cpu-power → sum-attributed-power` |
+| CPU + DRAM | `cpu-share → scale-cpu-power → mem-share → scale-dram-power → sum-attributed-power-dram` |
+| CPU + GPU | `cpu-share → scale-cpu-power → sum-attributed-power → sum-gpu-power` |
+| CPU + DRAM + GPU | `cpu-share → scale-cpu-power → mem-share → scale-dram-power → sum-attributed-power-dram → sum-gpu-power` |
+
+All variants feed into `duration-to-hours → calculate-energy → calculate-carbon-operational`.
+
+### Empirical basis
+
+All 104 Oscar compute nodes export `scaph_socket_power_microwatts` (CPU domain). A subset also export `scaph_domain_power_microwatts{domain_name="dram"}` (DRAM domain). No node exports DRAM domain data without also exporting CPU domain data. The absence of CPU domain data for a discovered node is treated as a hard error.
 
 ## 5. Embodied Carbon (`--embodied`)
 

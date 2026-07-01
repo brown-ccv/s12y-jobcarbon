@@ -7,50 +7,51 @@ from importlib import resources
 
 from .config import Config, EstimatedGpuSpec, is_pcf_spec
 from .models import NodeData
-from .registry import GPU_PROFILES, NodeProfile
 from .alignment import align
 
 type Manifest = dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
-OPERATIONAL_STEPS = {
-    NodeProfile.FULL: [
-        "sum-scaph-power",
-        "duration-to-hours",
-        "calculate-energy",
-        "calculate-carbon-operational",
-    ],
-    NodeProfile.FULL_GPU: [
-        "sum-scaph-gpu-power",
-        "duration-to-hours",
-        "calculate-energy",
-        "calculate-carbon-operational",
-    ],
-    NodeProfile.HOST_ONLY: [
-        "cpu-share",
-        "mem-share",
-        "weight-cpu-share",
-        "weight-mem-share",
-        "reservation-share",
-        "scale-host-power",
-        "duration-to-hours",
-        "calculate-energy",
-        "calculate-carbon-operational",
-    ],
-    NodeProfile.HOST_ONLY_GPU: [
-        "cpu-share",
-        "mem-share",
-        "weight-cpu-share",
-        "weight-mem-share",
-        "reservation-share",
-        "scale-host-power-gpu",
-        "sum-node-gpu-power",
-        "duration-to-hours",
-        "calculate-energy",
-        "calculate-carbon-operational",
-    ],
-}
+OPERATIONAL_STEPS_CPU = [
+    "cpu-share",
+    "scale-cpu-power",
+    "sum-attributed-power",
+    "duration-to-hours",
+    "calculate-energy",
+    "calculate-carbon-operational",
+]
+
+OPERATIONAL_STEPS_CPU_GPU = [
+    "cpu-share",
+    "scale-cpu-power",
+    "sum-attributed-power-gpu",
+    "duration-to-hours",
+    "calculate-energy",
+    "calculate-carbon-operational",
+]
+
+OPERATIONAL_STEPS_CPU_DRAM = [
+    "cpu-share",
+    "scale-cpu-power",
+    "mem-share",
+    "scale-dram-power",
+    "sum-attributed-power-dram",
+    "duration-to-hours",
+    "calculate-energy",
+    "calculate-carbon-operational",
+]
+
+OPERATIONAL_STEPS_CPU_DRAM_GPU = [
+    "cpu-share",
+    "scale-cpu-power",
+    "mem-share",
+    "scale-dram-power",
+    "sum-attributed-power-dram-gpu",
+    "duration-to-hours",
+    "calculate-energy",
+    "calculate-carbon-operational",
+]
 
 EMBODIED_STEPS_SERVER_ONLY = [
     "server-embodied",
@@ -80,18 +81,6 @@ EMBODIED_STEPS_GPU_ESTIMATED = [
     "sum-carbon",
 ]
 
-OPERATIONAL_DEFAULTS = {
-    NodeProfile.FULL: [],
-    NodeProfile.FULL_GPU: [],
-    NodeProfile.HOST_ONLY: ["cpu_total", "mem_total", "cpu_allocated", "mem_allocated"],
-    NodeProfile.HOST_ONLY_GPU: [
-        "cpu_total",
-        "mem_total",
-        "cpu_allocated",
-        "mem_allocated",
-    ],
-}
-
 AGGREGATION_OPERATIONAL = {
     "metrics": ["duration", "energy", "carbon_operational"],
     "type": "both",
@@ -120,7 +109,7 @@ def _load_plugin(name: str) -> Manifest:
 
 def _embodied_steps(node_data: NodeData, config: Config) -> list[str]:
     """Return the ordered embodied pipeline steps for this node's profile."""
-    if node_data.profile not in GPU_PROFILES:
+    if not node_data.gpu_count:
         return EMBODIED_STEPS_SERVER_ONLY
     entry = config.gpu_for_node(node_data.node)
     if entry is None:
@@ -132,9 +121,22 @@ def _embodied_steps(node_data: NodeData, config: Config) -> list[str]:
     return EMBODIED_STEPS_GPU_ESTIMATED
 
 
+def _operational_steps(node_data: NodeData) -> list[str]:
+    """Return the ordered operational pipeline steps for this node."""
+    has_dram = "dram_power" in node_data.metrics
+    has_gpu = node_data.gpu_count > 0
+    if has_dram and has_gpu:
+        return OPERATIONAL_STEPS_CPU_DRAM_GPU
+    if has_dram:
+        return OPERATIONAL_STEPS_CPU_DRAM
+    if has_gpu:
+        return OPERATIONAL_STEPS_CPU_GPU
+    return OPERATIONAL_STEPS_CPU
+
+
 def _pipeline_steps(node_data: NodeData, config: Config) -> list[str]:
     """Return the full ordered pipeline step list for this node."""
-    steps = list(OPERATIONAL_STEPS[node_data.profile])
+    steps = list(_operational_steps(node_data))
     if config.embodied:
         steps.extend(_embodied_steps(node_data, config))
     return steps
@@ -142,7 +144,7 @@ def _pipeline_steps(node_data: NodeData, config: Config) -> list[str]:
 
 def _gpu_defaults(node_data: NodeData, config: Config) -> Manifest:
     """Return embodied GPU defaults to inject into the node defaults block."""
-    if node_data.profile not in GPU_PROFILES:
+    if not node_data.gpu_count:
         return {}
     entry = config.gpu_for_node(node_data.node)
     if entry is None:
@@ -189,17 +191,15 @@ def _node_defaults(node_data: NodeData, config: Config) -> Manifest:
     defaults: dict[str, Any] = {}
     if "grid_carbon_intensity" not in node_data.metrics:
         defaults["grid_carbon_intensity"] = config.grid_carbon_intensity
-    for field in OPERATIONAL_DEFAULTS[node_data.profile]:
-        defaults[field] = getattr(node_data, field)
+    defaults["cpu_total"] = node_data.cpu_total
+    defaults["cpu_allocated"] = node_data.cpu_allocated
+    defaults["mem_total"] = node_data.mem_total
+    defaults["mem_allocated"] = node_data.mem_allocated
     if config.embodied:
         defaults.update(
             {
                 "cpu_lifespan_seconds": config.cpu_lifespan_seconds,
                 "gpu_lifespan_seconds": config.gpu_lifespan_seconds,
-                "cpu_total": node_data.cpu_total,
-                "mem_total": node_data.mem_total,
-                "cpu_allocated": node_data.cpu_allocated,
-                "mem_allocated": node_data.mem_allocated,
                 **_gpu_defaults(node_data, config),
             }
         )

@@ -13,7 +13,6 @@ from jobcarbon.config import (
 )
 from jobcarbon.loader import _get_nodes, _process_node, process_job
 from jobcarbon.models import Window
-from jobcarbon.registry import NodeProfile
 
 
 def _cfg(**kwargs) -> Config:
@@ -36,16 +35,18 @@ def _cfg(**kwargs) -> Config:
 
 
 def _make_process_node_engine(
-    dram=False, gpu=False, range_side_effect=None, instant_side_effect=None
+    cpu=True, dram=False, gpu=False, range_side_effect=None, instant_side_effect=None
 ):
     """Return a mock engine configured for _process_node tests
 
-    Defaults return timeseries for all metrics except dram/gpu (controlled by flags)
+    Defaults return timeseries for cpu only (controlled by flags)
     and a scalar 8 for all instant queries. Pass overrides to test specific behaviours
     """
     engine = MagicMock()
 
     def return_timeseries(metric, window, node="", jobid="", step_seconds=None):
+        if metric.id == "cpu_power":
+            return [prom_series(f"{node}:9191", [(1000, 1.0)])] if cpu else []
         if metric.id == "dram_power":
             return [prom_series(f"{node}:9191", [(1000, 1.0)])] if dram else []
         if metric.id == "gpu_power":
@@ -88,18 +89,36 @@ def test_get_nodes_raises_when_empty():
 
 
 @pytest.mark.parametrize(
-    "dram,gpu,expected_profile",
+    "dram,gpu,expected_metrics",
     [
-        (True, False, NodeProfile.FULL),
-        (True, True, NodeProfile.FULL_GPU),
-        (False, False, NodeProfile.HOST_ONLY),
-        (False, True, NodeProfile.HOST_ONLY_GPU),
+        (False, False, {"cpu_power"}),
+        (True, False, {"cpu_power", "dram_power"}),
+        (False, True, {"cpu_power", "gpu_power"}),
+        (True, True, {"cpu_power", "dram_power", "gpu_power"}),
     ],
 )
-def test_process_node_profile(dram, gpu, expected_profile):
+def test_process_node_metrics(dram, gpu, expected_metrics):
     engine = _make_process_node_engine(dram=dram, gpu=gpu)
     result = _process_node(engine, "node1", "42", Window(start=1000, end=2000))
-    assert result.profile == expected_profile
+    assert set(result.metrics.keys()) == expected_metrics
+
+
+def test_process_node_raises_when_no_cpu_power():
+    engine = _make_process_node_engine(cpu=False)
+    with pytest.raises(ValueError, match="no cpu_power data"):
+        _process_node(engine, "node1", "42", Window(start=1000, end=2000))
+
+
+def test_process_node_gpu_count_set_when_gpu_present():
+    engine = _make_process_node_engine(gpu=True)
+    result = _process_node(engine, "node1", "42", Window(start=1000, end=2000))
+    assert result.gpu_count == 8
+
+
+def test_process_node_gpu_count_zero_when_no_gpu():
+    engine = _make_process_node_engine(gpu=False)
+    result = _process_node(engine, "node1", "42", Window(start=1000, end=2000))
+    assert result.gpu_count == 0
 
 
 @pytest.mark.parametrize(

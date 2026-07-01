@@ -1,6 +1,0 @@
-path: builtin
-method: Coefficient
-config:
-  input-parameter: mem_share
-  coefficient: 0.3
-  output-parameter: weighted_mem_share

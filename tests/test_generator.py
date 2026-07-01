@@ -11,7 +11,6 @@ from jobcarbon.config import (
     _years_to_seconds,
 )
 from jobcarbon.models import NodeData, Observation, Window
-from jobcarbon.registry import NodeProfile
 from jobcarbon.generator import (
     _pipeline_steps,
     _node_defaults,
@@ -59,11 +58,10 @@ def _cfg_with_gpu(entry: dict, embodied: bool = False) -> Config:
     )
 
 
-def _node(profile: NodeProfile, gpu_count: int = 0) -> NodeData:
+def _node(metrics: dict | None = None, gpu_count: int = 0) -> NodeData:
     return NodeData(
         node="node1",
-        profile=profile,
-        metrics={},
+        metrics=metrics if metrics is not None else {},
         cpu_total=32,
         mem_total=128,
         cpu_allocated=8,
@@ -88,34 +86,84 @@ def test_years_to_seconds():
     assert _years_to_seconds(5) == 5 * 365 * 24 * 3600
 
 
+# --- operational step selection ---
+
+def test_pipeline_steps_cpu_only():
+    steps = _pipeline_steps(_node(), _cfg())
+    assert steps == [
+        "cpu-share",
+        "scale-cpu-power",
+        "sum-attributed-power",
+        "duration-to-hours",
+        "calculate-energy",
+        "calculate-carbon-operational",
+    ]
+
+
+def test_pipeline_steps_cpu_dram():
+    steps = _pipeline_steps(_node(metrics={"cpu_power": [], "dram_power": []}), _cfg())
+    assert steps == [
+        "cpu-share",
+        "scale-cpu-power",
+        "mem-share",
+        "scale-dram-power",
+        "sum-attributed-power-dram",
+        "duration-to-hours",
+        "calculate-energy",
+        "calculate-carbon-operational",
+    ]
+
+
+def test_pipeline_steps_cpu_gpu():
+    steps = _pipeline_steps(_node(gpu_count=2), _cfg())
+    assert steps == [
+        "cpu-share",
+        "scale-cpu-power",
+        "sum-attributed-power-gpu",
+        "duration-to-hours",
+        "calculate-energy",
+        "calculate-carbon-operational",
+    ]
+
+
+def test_pipeline_steps_cpu_dram_gpu():
+    steps = _pipeline_steps(
+        _node(metrics={"cpu_power": [], "dram_power": []}, gpu_count=4), _cfg()
+    )
+    assert steps == [
+        "cpu-share",
+        "scale-cpu-power",
+        "mem-share",
+        "scale-dram-power",
+        "sum-attributed-power-dram-gpu",
+        "duration-to-hours",
+        "calculate-energy",
+        "calculate-carbon-operational",
+    ]
+
+
 def test_pipeline_steps_operational_excludes_embodied():
-    for profile in NodeProfile:
-        steps = _pipeline_steps(_node(profile), _cfg())
+    for node in [
+        _node(),
+        _node(metrics={"cpu_power": [], "dram_power": []}),
+        _node(gpu_count=2),
+    ]:
+        steps = _pipeline_steps(node, _cfg())
         assert "server-embodied" not in steps
         assert "sum-carbon" not in steps
 
 
-def test_pipeline_steps_host_only_uses_direct_scale():
-    steps = _pipeline_steps(_node(NodeProfile.HOST_ONLY), _cfg())
-    assert "scale-host-power" in steps
-    assert "sum-node-gpu-power" not in steps
-
-
-def test_pipeline_steps_host_only_gpu_adds_gpu_sum():
-    steps = _pipeline_steps(_node(NodeProfile.HOST_ONLY_GPU), _cfg())
-    assert "scale-host-power-gpu" in steps
-    assert "sum-node-gpu-power" in steps
-
+# --- embodied steps ---
 
 def test_pipeline_steps_embodied_server_only_excludes_gpu():
-    steps = _pipeline_steps(_node(NodeProfile.FULL), _cfg(embodied=True))
+    steps = _pipeline_steps(_node(), _cfg(embodied=True))
     assert "server-embodied" in steps
     assert "sum-embodied-gpu" not in steps
 
 
 def test_pipeline_steps_embodied_gpu_pcf_excludes_estimated():
     steps = _pipeline_steps(
-        _node(NodeProfile.FULL_GPU, gpu_count=4),
+        _node(gpu_count=4),
         _cfg_with_gpu(_PCF_ENTRY, embodied=True),
     )
     assert "gpu-embodied-pcf" in steps
@@ -124,7 +172,7 @@ def test_pipeline_steps_embodied_gpu_pcf_excludes_estimated():
 
 def test_pipeline_steps_embodied_gpu_estimated_excludes_pcf():
     steps = _pipeline_steps(
-        _node(NodeProfile.FULL_GPU, gpu_count=2),
+        _node(gpu_count=2),
         _cfg_with_gpu(_ESTIMATED_ENTRY, embodied=True),
     )
     assert "gpu-chip-embodied" in steps
@@ -133,54 +181,52 @@ def test_pipeline_steps_embodied_gpu_estimated_excludes_pcf():
 
 def test_pipeline_steps_embodied_gpu_missing_config_raises():
     with pytest.raises(ValueError, match="not in gpu_config"):
-        _pipeline_steps(_node(NodeProfile.FULL_GPU, gpu_count=2), _cfg(embodied=True))
+        _pipeline_steps(_node(gpu_count=2), _cfg(embodied=True))
 
 
-def test_node_defaults_operational_only_has_gci():
-    defaults = _node_defaults(_node(NodeProfile.FULL), _cfg())
-    assert set(defaults.keys()) == {"grid_carbon_intensity"}
+# --- defaults ---
+
+def test_node_defaults_always_includes_allocation_fields():
+    for node in [
+        _node(),
+        _node(metrics={"cpu_power": [], "dram_power": []}),
+        _node(gpu_count=2),
+    ]:
+        defaults = _node_defaults(node, _cfg())
+        assert {"cpu_total", "cpu_allocated", "mem_total", "mem_allocated"}.issubset(
+            defaults.keys()
+        )
 
 
-def test_node_defaults_operational_full_only_has_gci():
-    for profile in (NodeProfile.FULL, NodeProfile.FULL_GPU):
-        defaults = _node_defaults(_node(profile), _cfg())
-        assert set(defaults.keys()) == {"grid_carbon_intensity"}
+def test_node_defaults_includes_gci():
+    defaults = _node_defaults(_node(), _cfg())
+    assert "grid_carbon_intensity" in defaults
 
 
 def test_node_defaults_omits_gci_when_per_observation_series_present():
-    node = _node(NodeProfile.FULL)
-    node.metrics["grid_carbon_intensity"] = [{"metric": {}, "values": [(1000, 250.0)]}]
+    node = _node(metrics={"grid_carbon_intensity": [{"metric": {}, "values": [(1000, 250.0)]}]})
     defaults = _node_defaults(node, _cfg())
     assert "grid_carbon_intensity" not in defaults
-
-
-def test_node_defaults_operational_host_only_includes_allocation_fields():
-    for profile in (NodeProfile.HOST_ONLY, NodeProfile.HOST_ONLY_GPU):
-        defaults = _node_defaults(_node(profile), _cfg())
-        assert {"cpu_total", "mem_total", "cpu_allocated", "mem_allocated"}.issubset(
-            defaults.keys()
-        )
-        assert "cpu_lifespan_seconds" not in defaults
 
 
 def test_node_defaults_embodied_gates_on_flag():
     cfg_off = _cfg(embodied=False)
     cfg_on = _cfg(embodied=True)
-    assert "cpu_lifespan_seconds" not in _node_defaults(
-        _node(NodeProfile.FULL), cfg_off
-    )
-    assert "cpu_lifespan_seconds" in _node_defaults(_node(NodeProfile.FULL), cfg_on)
+    assert "cpu_lifespan_seconds" not in _node_defaults(_node(), cfg_off)
+    assert "cpu_lifespan_seconds" in _node_defaults(_node(), cfg_on)
 
 
 def test_node_defaults_embodied_non_gpu_excludes_gpu_fields():
-    defaults = _node_defaults(_node(NodeProfile.FULL), _cfg(embodied=True))
+    defaults = _node_defaults(_node(), _cfg(embodied=True))
     assert "gpu_count" not in defaults
     assert "pcf_carbon_per_gpu" not in defaults
 
 
+# --- gpu defaults ---
+
 def test_gpu_defaults_pcf_excludes_estimated_fields():
     defaults = _gpu_defaults(
-        _node(NodeProfile.FULL_GPU, gpu_count=4), _cfg_with_gpu(_PCF_ENTRY)
+        _node(gpu_count=4), _cfg_with_gpu(_PCF_ENTRY)
     )
     assert "pcf_carbon_per_gpu" in defaults
     assert "die_area_sq_cm" not in defaults
@@ -188,7 +234,7 @@ def test_gpu_defaults_pcf_excludes_estimated_fields():
 
 def test_gpu_defaults_estimated_excludes_pcf_fields():
     defaults = _gpu_defaults(
-        _node(NodeProfile.FULL_GPU, gpu_count=2), _cfg_with_gpu(_ESTIMATED_ENTRY)
+        _node(gpu_count=2), _cfg_with_gpu(_ESTIMATED_ENTRY)
     )
     assert "process_scalar_carbon_per_sq_cm" in defaults
     assert "mem_scalar_carbon_per_gb" in defaults
@@ -198,18 +244,20 @@ def test_gpu_defaults_estimated_excludes_pcf_fields():
 def test_gpu_defaults_unknown_process_raises():
     entry = {**_ESTIMATED_ENTRY, "process": "intel-4"}
     with pytest.raises(ValueError, match="unknown process"):
-        _gpu_defaults(_node(NodeProfile.FULL_GPU, gpu_count=1), _cfg_with_gpu(entry))
+        _gpu_defaults(_node(gpu_count=1), _cfg_with_gpu(entry))
 
 
 def test_gpu_defaults_unknown_mem_type_raises():
     entry = {**_ESTIMATED_ENTRY, "mem_type": "ddr5"}
     with pytest.raises(ValueError, match="unknown mem_type"):
-        _gpu_defaults(_node(NodeProfile.FULL_GPU, gpu_count=1), _cfg_with_gpu(entry))
+        _gpu_defaults(_node(gpu_count=1), _cfg_with_gpu(entry))
 
+
+# --- manifest generation ---
 
 def test_generate_manifest_operational_aggregation():
     with patch("jobcarbon.generator.align", return_value=_FAKE_OBS):
-        manifest = generate_manifest("42", [_node(NodeProfile.FULL)], _cfg())
+        manifest = generate_manifest("42", [_node()], _cfg())
     assert manifest["aggregation"]["metrics"] == [
         "duration",
         "energy",
@@ -219,20 +267,17 @@ def test_generate_manifest_operational_aggregation():
 
 def test_generate_manifest_embodied_aggregation():
     with patch("jobcarbon.generator.align", return_value=_FAKE_OBS):
-        manifest = generate_manifest(
-            "42", [_node(NodeProfile.FULL)], _cfg(embodied=True)
-        )
+        manifest = generate_manifest("42", [_node()], _cfg(embodied=True))
     assert "carbon_embodied" in manifest["aggregation"]["metrics"]
     assert "carbon" in manifest["aggregation"]["metrics"]
 
 
-def test_generate_manifest_plugin_union_across_profiles():
+def test_generate_manifest_plugin_union_across_nodes():
     nodes = [
-        _node(NodeProfile.FULL),
+        _node(metrics={"cpu_power": []}),
         NodeData(
             node="node2",
-            profile=NodeProfile.HOST_ONLY,
-            metrics={},
+            metrics={"cpu_power": [], "dram_power": []},
             cpu_total=32,
             mem_total=128,
             cpu_allocated=8,
@@ -243,5 +288,6 @@ def test_generate_manifest_plugin_union_across_profiles():
     with patch("jobcarbon.generator.align", return_value=_FAKE_OBS):
         manifest = generate_manifest("42", nodes, _cfg())
     plugins = manifest["initialize"]["plugins"]
-    assert "sum-scaph-power" in plugins
-    assert "cpu-share" in plugins
+    assert "scale-cpu-power" in plugins
+    assert "mem-share" in plugins
+    assert "sum-attributed-power-dram" in plugins
