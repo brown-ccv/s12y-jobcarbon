@@ -1,0 +1,6 @@
+path: builtin
+method: Divide
+config:
+  numerator: mem_allocated
+  denominator: mem_total
+  output: mem_embodied_share

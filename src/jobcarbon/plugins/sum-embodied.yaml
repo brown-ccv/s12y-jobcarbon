@@ -2,7 +2,8 @@ path: builtin
 method: Sum
 config:
   input-parameters:
-    - server_embodied_carbon
+    - cpu_embodied_carbon
+    - dram_embodied_carbon
   output-parameter: carbon_embodied
 parameter-metadata:
   outputs:

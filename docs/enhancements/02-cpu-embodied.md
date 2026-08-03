@@ -1,6 +1,6 @@
 ---
 title: CPU and DRAM Embodied Carbon (BoaviztAPI Bottom-Up)
-status: proposed
+status: implemented
 owners: [@broarr]
 created: 2026-05-07
 updated: 2026-07-27
@@ -78,8 +78,13 @@ GiB treated as GB, a <7% approximation folded into the estimate).
 | `capacity` | installed RAM | `mem_total`, GB |
 | `density` | die density | 1.79 GB/cm² (`mem_density_gb_per_sq_cm`) |
 | `F^die_ram` | die manufacturing scalar | 2.20 kgCO2eq/cm² = **2200 gCO2eq/cm²** |
-| `I^base_ram` | fixed base **per module** | 5.22 kgCO2eq = **5220 gCO2eq** × `dram_module_count` |
+| `I^base_ram` | fixed base, applied once | 5.22 kgCO2eq = **5220 gCO2eq** |
 | `D` | life expectancy | `cpu_lifespan_seconds` (RAM shares server lifespan) |
+
+The base is applied **once per node**, following the formula as written — not multiplied by a
+DIMM count. BoaviztAPI internally charges the base per module; a single base slightly
+under-counts the fixed term on multi-DIMM nodes, but the die term dominates and this avoids a
+DIMM inventory (unavailable without root / EDAC quirks on the target cluster).
 
 ## Design Decisions
 
@@ -92,25 +97,33 @@ the two pipelines and break on nodes where `mem_share` isn't computed operationa
 embodied chain computes its own shares under distinct output names (`cpu_embodied_share`,
 `mem_embodied_share`). Two extra `Divide` steps; zero coupling; no conditional step insertion.
 
+### `socket_count` from Scaphandre, not config
+
+The node's socket count is auto-discovered from Prometheus — Scaphandre exposes one `socket_id`
+label per physical CPU, so a distinct-label count gives `socket_count`, exactly parallel to how
+`gpu_count` counts `minor_number`. It is queried in `loader.py`, stored on `NodeData`, and
+injected into `defaults`. This keeps it out of the config (nothing to drift) and adds no new
+failure mode: the loader already skips nodes without Scaphandre data.
+
 ### `[[cpus]]` config structure
 
 Keyed by CPU model, listing the nodes that carry it — same inversion pattern as `[[gpus]]`.
-Adding a homogeneous rack is one entry, not N.
+Adding a homogeneous rack is one entry, not N. With sockets from Scaphandre and no DIMM count
+needed, an entry is just the model, its per-socket die area, and the node list.
 
 ```toml
 # module-level constant
 mem_density_gb_per_sq_cm = 1.79   # BoaviztAPI RAM die density, GB/cm²
 
 [[cpus]]
-cpu_model         = "Intel Xeon Platinum 8268 (Cascade Lake-SP)"
-die_area_sq_cm    = 6.94          # total die area per socket, from TechPowerUp
-socket_count      = 2
-dram_module_count = 8             # installed DIMM count (base term is per module)
-nodes             = ["node1802", "node1804"]
+cpu_model      = "Intel Xeon Platinum 8268"
+die_area_sq_cm = 6.94             # total die area per socket
+nodes          = ["node1802", "node1804"]
 ```
 
 `die_area_sq_cm` is the CPU's total die area (for chiplet parts, the summed die area of the
-package) — a single number from TechPowerUp per CPU family. No per-die breakdown.
+package). Intel figures are the monolithic die (LCC/HCC/XCC); AMD figures sum CCDs + I/O die
+(+ 3D V-Cache for Genoa-X). Sources: WikiChip, TechPowerUp, SemiAnalysis/TechInsights.
 
 ### Constants in code, not per-entry
 
@@ -121,9 +134,12 @@ injected into `defaults` so the manifest stays self-documenting.
 
 ### No auto-discovery of CPU model
 
-CPU model is not in Slurm GRES (unlike GPUs), so `jobcarbon-create-config` cannot populate
-`[[cpus]]`. It emits a single commented placeholder entry. Node→CPU mapping is maintained
-out-of-band by operators.
+CPU model is not in Slurm GRES (unlike GPUs), so `create-config` cannot map nodes. To keep the
+generator portable across sites (it must not bake in one cluster's hardware), it emits a
+**generic commented `[[cpus]]` template** pointing operators at the shared die-area reference in
+`docs/die-areas.md`. Operators fill in one entry per CPU model with its node list by hand.
+Die area is a hardware fact, not site config, so it lives in that shared doc — not in code and
+not baked into every generated config.
 
 ### Failure policy
 
@@ -147,24 +163,23 @@ operational steps when `--embodied` is set):
 
 | step | method | output |
 |---|---|---|
-| `cpu-die-embodied` | Multiply `die_area_sq_cm × cpu_die_scalar` | `cpu_die_carbon` |
-| `cpu-embodied-per-socket` | Sum `[cpu_die_carbon, cpu_base_carbon]` | `cpu_embodied_per_socket` |
+| `cpu-die-embodied` | Multiply `die_area_sq_cm × cpu_die_scalar` | `cpu_die_embodied_carbon` |
+| `cpu-embodied-per-socket` | Sum `[cpu_die_embodied_carbon, cpu_base_carbon]` | `cpu_embodied_carbon_per_socket` |
 | `cpu-embodied-node` | Multiply `× socket_count` | `cpu_embodied_carbon_node` (lifetime) |
+| `cpu-embodied-attributed` | Multiply `× cpu_embodied_share` | `cpu_embodied_carbon_node` (in place) |
 | `cpu-embodied-per-second` | Coefficient `× 1/cpu_lifespan_seconds` | `cpu_embodied_carbon_per_second` |
-| `cpu-embodied-time-scale` | Multiply `× duration` | `cpu_embodied_carbon_scaled` |
-| `cpu-embodied-attributed` | Multiply `× cpu_embodied_share` | `cpu_embodied_carbon` |
+| `cpu-embodied-time-scale` | Multiply `× duration` | `cpu_embodied_carbon` |
 
 **DRAM**
 
 | step | method | output |
 |---|---|---|
 | `dram-die-area` | Divide `mem_total / mem_density_gb_per_sq_cm` | `dram_die_area_sq_cm` |
-| `dram-die-embodied` | Multiply `× dram_die_scalar` | `dram_die_carbon` |
-| `dram-base-embodied` | Multiply `dram_base_carbon × dram_module_count` | `dram_base_total` |
-| `dram-embodied-node` | Sum `[dram_die_carbon, dram_base_total]` | `dram_embodied_carbon_node` (lifetime) |
+| `dram-die-embodied` | Multiply `× dram_die_scalar` | `dram_die_embodied_carbon` |
+| `dram-embodied-node` | Sum `[dram_die_embodied_carbon, dram_base_carbon]` | `dram_embodied_carbon_node` (lifetime) |
+| `dram-embodied-attributed` | Multiply `× mem_embodied_share` | `dram_embodied_carbon_node` (in place) |
 | `dram-embodied-per-second` | Coefficient `× 1/cpu_lifespan_seconds` | `dram_embodied_carbon_per_second` |
-| `dram-embodied-time-scale` | Multiply `× duration` | `dram_embodied_carbon_scaled` |
-| `dram-embodied-attributed` | Multiply `× mem_embodied_share` | `dram_embodied_carbon` |
+| `dram-embodied-time-scale` | Multiply `× duration` | `dram_embodied_carbon` |
 
 **Sum**
 
@@ -180,8 +195,7 @@ Injected by `_cpu_defaults()`, parallel to `_gpu_defaults()`:
 defaults:
   # ... existing operational + lifespan fields
   die_area_sq_cm: 6.94
-  socket_count: 2
-  dram_module_count: 8
+  socket_count: 2               # from Scaphandre (NodeData), not config
   cpu_die_scalar: 1970
   cpu_base_carbon: 9140
   dram_die_scalar: 2200
@@ -196,46 +210,51 @@ the manifest alone.
 
 | File | Change |
 |---|---|
-| `src/jobcarbon/config.py` | Add `CpuSpec` TypedDict; `CPU_DIE_SCALAR`/`CPU_BASE`/`DRAM_DIE_SCALAR`/`DRAM_BASE`/`DEFAULT_MEM_DENSITY` constants; parse `[[cpus]]` and `mem_density_gb_per_sq_cm`; `_build_cpu_node_map()` (reuse dup-node guard); `cpu_for_node()`; commented `[[cpus]]` placeholder in `generate()` |
-| `src/jobcarbon/generator.py` | Replace `"server-embodied"` in the three `EMBODIED_STEPS_*` lists with the new chain; add `_cpu_defaults()`; wire into `_node_defaults()` under the `config.embodied` gate; raise `ValueError` on unmapped node |
+| `src/jobcarbon/config.py` | Add `CpuSpec` TypedDict; `CPU_DIE_SCALAR`/`CPU_BASE_CARBON`/`DRAM_DIE_SCALAR`/`DRAM_BASE_CARBON`/`DEFAULT_MEM_DENSITY` constants; parse `[[cpus]]` and `mem_density_gb_per_sq_cm`; generalize `_build_node_map(entries, model_key)`; `cpu_for_node()`; generic commented `[[cpus]]` template in `generate()` |
+| `docs/die-areas.md` | New — shared CPU model → die-area catalog, derivation method, sources |
+| `src/jobcarbon/registry.py` | Add `socket_count` metric (`count by (socket_id) scaph_socket_power_microwatts`) |
+| `src/jobcarbon/models.py` | Add `socket_count: int = 1` to `NodeData` |
+| `src/jobcarbon/loader.py` | Query `socket_count` in `_process_node` (fall back to 1) |
+| `src/jobcarbon/generator.py` | Replace `"server-embodied"` in the three `EMBODIED_STEPS_*` lists with the new chain; add `_cpu_defaults()` (die area from config, `socket_count` from `NodeData`); wire into `_node_defaults()` under the `config.embodied` gate; raise `ValueError` on unmapped node |
 | `src/jobcarbon/plugins/server-embodied.yaml` | Delete |
-| `src/jobcarbon/plugins/*.yaml` | Add 2 share + 6 CPU + 7 DRAM plugin files listed above |
+| `src/jobcarbon/plugins/*.yaml` | Add 2 share + 6 CPU + 6 DRAM plugin files listed above |
 | `src/jobcarbon/plugins/sum-embodied.yaml` | Inputs → `[cpu_embodied_carbon, dram_embodied_carbon]` |
-| `tests/test_config.py` | `[[cpus]]` parsing, `cpu_for_node()`, duplicate-node `ValueError`, `mem_density` override |
-| `tests/test_generator.py` | Assert new `defaults` fields; assert step list; assert `ValueError` on unmapped node |
-| `METHODOLOGY.md` | §5: retire `SciEmbodied`; document BoaviztAPI CPU/DRAM formulas, constants, density, module count, limitations |
+| `src/jobcarbon/plugins/sum-embodied-gpu.yaml` | Inputs → `[cpu_embodied_carbon, dram_embodied_carbon, gpu_embodied_carbon]` |
+| `config/config.toml` | 14 `[[cpus]]` entries (427 nodes) from the `lscpu` dump |
+| `METHODOLOGY.md` | §5: retire `SciEmbodied`; document BoaviztAPI CPU/DRAM formulas, constants, density, limitations |
 
 ## Validation
 
-### Example (2× Xeon Platinum 8268, 512 GB, 8 DIMMs)
+### Example (2× Xeon Platinum 8268, 512 GB)
 
-Given: `die_area_sq_cm = 6.94`, `socket_count = 2`, `mem_total = 512`, `dram_module_count = 8`,
+Given: `die_area_sq_cm = 6.94`, `socket_count = 2` (from Scaphandre), `mem_total = 512`,
 `cpu_lifespan_seconds = 157,680,000` (5 yr), `duration = 60`, `cpu_allocated/cpu_total = 24/48`,
 `mem_allocated/mem_total = 128/512`.
 
 ```
-CPU lifetime:
-  cpu_die_carbon          = 6.94 × 1970                 =    13,671.8 gCO2eq
-  cpu_embodied_per_socket = 13,671.8 + 9140             =    22,811.8 gCO2eq
-  cpu_embodied_node       = 22,811.8 × 2                =    45,623.6 gCO2eq
-  per 60s, share 0.5      = 45,623.6 /157,680,000×60×0.5 ≈  0.00868 gCO2eq
+CPU:
+  cpu_die_embodied_carbon   = 6.94 × 1970                    =    13,671.8 gCO2eq
+  cpu_embodied_per_socket   = 13,671.8 + 9140                =    22,811.8 gCO2eq
+  cpu_embodied_carbon_node  = 22,811.8 × 2                   =    45,623.6 gCO2eq
+  attributed (× 0.5)        = 45,623.6 × 0.5                 =    22,811.8 gCO2eq
+  per 60s                   = 22,811.8 /157,680,000×60       ≈     0.00868 gCO2eq
 
-DRAM lifetime:
-  dram_die_area           = 512 / 1.79                  =    286.03 cm²
-  dram_die_carbon         = 286.03 × 2200               =   629,266 gCO2eq
-  dram_base_total         = 5220 × 8                    =    41,760 gCO2eq
-  dram_embodied_node      = 629,266 + 41,760            =   671,026 gCO2eq
-  per 60s, share 0.25     = 671,026 /157,680,000×60×0.25 ≈  0.0638 gCO2eq
+DRAM:
+  dram_die_area             = 512 / 1.79                     =      286.03 cm²
+  dram_die_embodied_carbon  = 286.03 × 2200                  =   629,275 gCO2eq
+  dram_embodied_carbon_node = 629,275 + 5220 (single base)   =   634,495 gCO2eq
+  attributed (× 0.25)       = 634,495 × 0.25                 =   158,624 gCO2eq
+  per 60s                   = 158,624 /157,680,000×60        ≈     0.0604 gCO2eq
 
-carbon_embodied (60s)     = 0.00868 + 0.0638           ≈    0.0725 gCO2eq
+carbon_embodied (60s)       = 0.00868 + 0.0604              ≈     0.0691 gCO2eq
 ```
 
 ### Acceptance criteria
 
 - All three embodied templates produce `carbon_embodied` with no `SciEmbodied`/`vCPUs` reference.
-- Generated manifests contain the eight `defaults` fields above.
+- Generated manifests contain the seven embodied `defaults` fields above.
 - `carbon_embodied` summed over all timesteps equals
-  `(cpu_embodied_node × cpu_share + dram_embodied_node × mem_share) × job_duration / cpu_lifespan_seconds`.
+  `(cpu_embodied_carbon_node × cpu_share + dram_embodied_carbon_node × mem_share) × job_duration / cpu_lifespan_seconds`.
 - Unmapped node raises `ValueError` naming the node.
 - Operational-only manifests (no `--embodied`) are byte-identical to today.
 - All existing tests pass.

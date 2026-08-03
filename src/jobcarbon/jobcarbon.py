@@ -12,6 +12,7 @@ from .engine import PrometheusEngine
 from .generator import generate_manifest
 from .loader import process_job
 from .utils import output_text
+from .validate import find_problems
 from .yamldump import dump
 
 app = typer.Typer()
@@ -85,6 +86,35 @@ def manifest(
     engine = PrometheusEngine(config)
     output_path = Path.cwd() / output if output else None
     _run_job(engine, job_id, output_path, config)
+
+
+@app.command(name="validate-config")
+def validate_config() -> None:
+    """Check the resolved config loads and is complete (offline, no cluster).
+
+    A post-install sanity check: confirms the CLI runs, the config file is
+    discoverable and parses, and every hardware entry is well-formed (every GPU
+    node also has a CPU die area, scalars resolve). Exits non-zero on any
+    problem so it can gate an install.
+    """
+    try:
+        config = Config.load()
+    except (FileNotFoundError, ValueError) as e:
+        logger.error("config could not be loaded: %s", e)
+        raise typer.Exit(1)
+
+    problems = find_problems(config)
+    if problems:
+        for problem in problems:
+            logger.error("%s", problem)
+        logger.error("config invalid: %d problem(s)", len(problems))
+        raise typer.Exit(1)
+
+    logger.info(
+        "config ok: %d CPU model(s), %d GPU model(s)",
+        len({s["cpu_model"] for s in config.cpu_node_map.values()}),
+        len({s["gpu_model"] for s in config.node_map.values()}),
+    )
 
 
 if __name__ == "__main__":

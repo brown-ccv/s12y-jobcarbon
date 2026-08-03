@@ -9,6 +9,7 @@ from jobcarbon.config import (
     MEM_SCALARS,
     DEFAULT_YIELD_FACTOR,
     DEFAULT_ELECTRICITY_MAPS_ZONE,
+    DEFAULT_MEM_DENSITY,
     _years_to_seconds,
 )
 from jobcarbon.loader import _get_nodes, _process_node, process_job
@@ -29,7 +30,9 @@ def _cfg(**kwargs) -> Config:
         electricity_maps_api_key=None,
         process_scalars=PROCESS_SCALARS,
         mem_scalars=MEM_SCALARS,
+        mem_density=DEFAULT_MEM_DENSITY,
         node_map={},
+        cpu_node_map={},
     )
     return Config(**{**defaults, **kwargs})
 

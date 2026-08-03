@@ -1,0 +1,7 @@
+path: builtin
+method: Sum
+config:
+  input-parameters:
+    - dram_die_embodied_carbon
+    - dram_base_carbon
+  output-parameter: dram_embodied_carbon_node

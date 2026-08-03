@@ -49,6 +49,8 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         id="gpu_count",
         query="count(count by (minor_number) (nvidia_gpu_power_usage_milliwatts{{instance=~'{node}:.*',jobid='{jobid}'}}))",
     ),
+    "socket_count": MetricDefinition(
+        id="socket_count",
+        query="count(count by (socket_id) (scaph_socket_power_microwatts{{instance=~'{node}:.*'}}))",
+    ),
 }
-
-

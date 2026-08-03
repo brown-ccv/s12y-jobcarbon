@@ -120,25 +120,55 @@ All 104 Oscar compute nodes export `scaph_socket_power_microwatts` (CPU domain).
 
 Embodied carbon estimation is opt-in via the `--embodied` flag. When not specified, `carbon_operational` is the terminal output and no embodied steps are run.
 
-### Server Embodied Carbon
+### CPU and DRAM Embodied Carbon
 
-Embodied carbon for the server platform is computed using the Impact Framework `SciEmbodied` plugin. The output field is `server_embodied_carbon`, which is then summed into `carbon_embodied`.
+CPU and DRAM embodied carbon are estimated bottom-up from semiconductor die area using the BoaviztAPI manufacturing model ([de Rancourt et al.][boavizta]). This replaces the earlier `SciEmbodied` plugin (a cloud-VM regression) with an arithmetic chain whose every step is visible in the manifest. The two per-interval outputs `cpu_embodied_carbon` and `dram_embodied_carbon` are summed into `carbon_embodied`.
 
-**Inputs passed to the plugin:**
+All constants are stored in gCO2eq and cm² to match the GPU pipeline's `die_area_sq_cm` convention.
 
-| Plugin input | Manifest field | Description |
+**CPU** — die area comes from `config.toml` (`[[cpus]]`, keyed by CPU model → node list); `socket_count` is auto-discovered from Scaphandre (distinct `socket_id` labels), so it never drifts:
+
+```
+cpu_embodied_carbon_per_socket = die_area_sq_cm × cpu_die_scalar + cpu_base_carbon   # one CPU, lifetime
+cpu_embodied_carbon_node       = cpu_embodied_carbon_per_socket × socket_count        # all sockets
+cpu_embodied_carbon_node      ×= cpu_embodied_share                                   # cpu_allocated / cpu_total
+cpu_embodied_carbon_per_second = cpu_embodied_carbon_node / cpu_lifespan_seconds
+cpu_embodied_carbon            = cpu_embodied_carbon_per_second × duration            # this timestep
+```
+
+**DRAM** — die area is derived from installed capacity (`mem_total`) and a fixed die density; the fixed base is applied once (single scalar, not per DIMM):
+
+```
+dram_die_area_sq_cm       = mem_total / mem_density_gb_per_sq_cm
+dram_embodied_carbon_node = dram_die_area_sq_cm × dram_die_scalar + dram_base_carbon  # lifetime
+dram_embodied_carbon_node ×= mem_embodied_share                                       # mem_allocated / mem_total
+dram_embodied_carbon_per_second = dram_embodied_carbon_node / cpu_lifespan_seconds
+dram_embodied_carbon      = dram_embodied_carbon_per_second × duration                # this timestep
+```
+
+**Constants** (`config.py`; injected into the manifest `defaults` so the arithmetic is auditable):
+
+| Constant | Value | Meaning |
 |---|---|---|
-| `vCPUs` | `cpu_allocated` | Cores allocated to the job (from cgroup data) |
-| `memory` | `mem_allocated` | Memory allocated to the job in GiB (from cgroup data) |
-| `lifespan` | `cpu_lifespan_seconds` | Server amortisation period; default 5 years, configurable via `cpu_lifespan_years` in `jobcarbon.toml` or `JOBCARBON_CPU_LIFESPAN_YEARS` |
+| `cpu_die_scalar` | 1970 gCO2eq/cm² | CPU die manufacturing (BoaviztAPI 1.97 kgCO2eq/cm²) |
+| `cpu_base_carbon` | 9140 gCO2eq | Fixed carbon per CPU (BoaviztAPI 9.14 kgCO2eq) |
+| `dram_die_scalar` | 2200 gCO2eq/cm² | DRAM die manufacturing (BoaviztAPI 2.20 kgCO2eq/cm²) |
+| `dram_base_carbon` | 5220 gCO2eq | Fixed carbon per RAM component (BoaviztAPI 5.22 kgCO2eq) |
+| `mem_density_gb_per_sq_cm` | 1.79 | RAM die density; overridable via `mem_density_gb_per_sq_cm` or `JOBCARBON_MEM_DENSITY_GB_PER_SQ_CM` |
 
-**What `SciEmbodied` models:** the plugin estimates embodied carbon for the *entire server* — CPU, DRAM, chassis, PSU, and associated components — not the processor die alone. It then scales the result to the job's allocated share of vCPUs and memory.
+**Attribution:** the embodied chain computes its own `cpu_embodied_share` and `mem_embodied_share` (independent of the operational `cpu_share`/`mem_share`), keeping the operational pipeline untouched.
 
-**Per-timestep amortization:** `SciEmbodied` internally scales the server lifetime total by `duration / lifespan`, producing a per-observation-interval value. Summed over the full job, this equals the job's proportional share of the server's lifetime embodied carbon
+**Per-timestep amortization:** both node lifetime totals are divided by `cpu_lifespan_seconds` to a per-second rate, then multiplied by `duration`. Summed over the job this equals the job's proportional share of the hardware's lifetime embodied carbon. `cpu_lifespan_seconds` defaults to 5 years, configurable via `cpu_lifespan_years` or `JOBCARBON_CPU_LIFESPAN_YEARS`.
+
+**Die area** (`[[cpus]].die_area_sq_cm`, per socket) is total silicon per socket: Intel monolithic die (LCC/HCC/XCC by core count), AMD summed CCDs + I/O die (+ 3D V-Cache for Genoa-X). Die area is a hardware fact rather than site config, so the model→die-area catalog, derivation method, and sources are maintained as a shared reference in [`docs/die-areas.md`](docs/die-areas.md); each site supplies only the per-node `[[cpus]]` node lists.
+
+**Failure policy:** a node with no `[[cpus]]` entry raises a `ValueError` at manifest generation naming the node. No silent fleet-average fallback.
 
 **Limitations:**
 
-- The Boavista dataset underlying `SciEmbodied` consists primarily of commercial server and cloud instance profiles. Interpolation accuracy for research HPC hardware is uncertain
+- BoaviztAPI's flat `cpu_die_scalar` assumes a leading-edge logic node. AMD I/O dies (GF 14nm / TSMC N6) are far cheaper per cm² than that, so summing them into `die_area_sq_cm` overcounts I/O-die carbon.
+- The DRAM base term is applied once per node rather than per DIMM (following the formula as written), slightly under-counting the fixed term on multi-DIMM nodes; the die term dominates.
+- `mem_total` (GiB, from Slurm) is treated as GB against the cm²-based density — a ~7% approximation folded into the estimate.
 
 ### GPU Embodied Carbon
 
@@ -257,8 +287,8 @@ carbon_operational (gCO2eq)   — per node, per timestep; aggregates to job tota
 
 **With `--embodied`:**
 ```
-carbon_embodied (gCO2eq) = server_embodied_carbon + gpu_embodied_carbon   # GPU profiles
-carbon_embodied (gCO2eq) = server_embodied_carbon                         # non-GPU profiles
+carbon_embodied (gCO2eq) = cpu_embodied_carbon + dram_embodied_carbon + gpu_embodied_carbon   # GPU profiles
+carbon_embodied (gCO2eq) = cpu_embodied_carbon + dram_embodied_carbon                          # non-GPU profiles
 carbon          (gCO2eq) = carbon_operational + carbon_embodied
 ```
 
@@ -272,6 +302,7 @@ No normalization denominator is applied. For cross-job comparison on a per-resou
 [h100-pcf]: https://images.nvidia.com/aem-dam/Solutions/documents/HGX-H100-PCF-Summary.pdf
 [b200-pcf]: https://images.nvidia.com/aem-dam/Solutions/documents/HGX-B200-PCF-Summary.pdf
 [boakes2023]: https://ieeexplore.ieee.org/document/10413725
+[boavizta]: https://boavizta.org/
 [hotcarbon2024]: https://hotcarbon.org/assets/2024/pdf/hotcarbon24-final154.pdf
 [techpowerup]: https://www.techpowerup.com/gpu-specs/
 [tpu-tu102]: https://www.techpowerup.com/gpu-specs/nvidia-tu102.g813

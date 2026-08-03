@@ -1,0 +1,7 @@
+path: builtin
+method: Multiply
+config:
+  input-parameters:
+    - dram_die_area_sq_cm
+    - dram_die_scalar
+  output-parameter: dram_die_embodied_carbon

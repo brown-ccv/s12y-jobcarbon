@@ -1,0 +1,6 @@
+path: builtin
+method: Coefficient
+config:
+  input-parameter: dram_embodied_carbon_node
+  coefficient: "=1/cpu_lifespan_seconds"
+  output-parameter: dram_embodied_carbon_per_second

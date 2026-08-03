@@ -1,0 +1,7 @@
+path: builtin
+method: Multiply
+config:
+  input-parameters:
+    - cpu_embodied_carbon_node
+    - cpu_embodied_share
+  output-parameter: cpu_embodied_carbon_node

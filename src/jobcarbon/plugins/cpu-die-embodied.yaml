@@ -1,0 +1,7 @@
+path: builtin
+method: Multiply
+config:
+  input-parameters:
+    - die_area_sq_cm
+    - cpu_die_scalar
+  output-parameter: cpu_die_embodied_carbon

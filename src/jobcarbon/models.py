@@ -30,6 +30,7 @@ class NodeData:
     mem_total: int
     cpu_allocated: int
     mem_allocated: int
+    socket_count: int = 1
     gpu_count: int = 0
 
 

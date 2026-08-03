@@ -1,8 +1,0 @@
-path: builtin
-method: SciEmbodied
-config:
-  lifespan: "=cpu_lifespan_seconds*1"
-  output-parameter: server_embodied_carbon
-mapping:
-  vCPUs: cpu_allocated
-  memory: mem_allocated

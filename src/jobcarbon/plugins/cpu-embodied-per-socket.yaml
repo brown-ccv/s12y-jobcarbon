@@ -1,0 +1,7 @@
+path: builtin
+method: Sum
+config:
+  input-parameters:
+    - cpu_die_embodied_carbon
+    - cpu_base_carbon
+  output-parameter: cpu_embodied_carbon_per_socket

@@ -5,7 +5,15 @@ from typing import Any, cast
 import yaml
 from importlib import resources
 
-from .config import Config, EstimatedGpuSpec, is_pcf_spec
+from .config import (
+    Config,
+    CPU_BASE_CARBON,
+    CPU_DIE_SCALAR,
+    DRAM_BASE_CARBON,
+    DRAM_DIE_SCALAR,
+    EstimatedGpuSpec,
+    is_pcf_spec,
+)
 from .models import NodeData
 from .alignment import align
 
@@ -53,14 +61,32 @@ OPERATIONAL_STEPS_CPU_DRAM_GPU = [
     "calculate-carbon-operational",
 ]
 
+# CPU + DRAM embodied carbon (BoaviztAPI bottom-up); replaces SciEmbodied.
+EMBODIED_STEPS_CPU_DRAM = [
+    "cpu-embodied-share",
+    "mem-embodied-share",
+    "cpu-die-embodied",
+    "cpu-embodied-per-socket",
+    "cpu-embodied-node",
+    "cpu-embodied-attributed",
+    "cpu-embodied-per-second",
+    "cpu-embodied-time-scale",
+    "dram-die-area",
+    "dram-die-embodied",
+    "dram-embodied-node",
+    "dram-embodied-attributed",
+    "dram-embodied-per-second",
+    "dram-embodied-time-scale",
+]
+
 EMBODIED_STEPS_SERVER_ONLY = [
-    "server-embodied",
+    *EMBODIED_STEPS_CPU_DRAM,
     "sum-embodied",
     "sum-carbon",
 ]
 
 EMBODIED_STEPS_GPU_PCF = [
-    "server-embodied",
+    *EMBODIED_STEPS_CPU_DRAM,
     "gpu-embodied-pcf",
     "gpu-embodied-per-second",
     "gpu-embodied-time-scale",
@@ -69,7 +95,7 @@ EMBODIED_STEPS_GPU_PCF = [
 ]
 
 EMBODIED_STEPS_GPU_ESTIMATED = [
-    "server-embodied",
+    *EMBODIED_STEPS_CPU_DRAM,
     "gpu-chip-embodied",
     "gpu-chip-yield-correct",
     "gpu-vram-embodied",
@@ -185,6 +211,22 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> Manifest:
     }
 
 
+def _cpu_defaults(node_data: NodeData, config: Config) -> Manifest:
+    """Return embodied CPU/DRAM defaults to inject into the node defaults block."""
+    entry = config.cpu_for_node(node_data.node)
+    if entry is None:
+        raise ValueError(f"node '{node_data.node}' has no [[cpus]] entry in the config")
+    return {
+        "die_area_sq_cm": entry["die_area_sq_cm"],
+        "socket_count": node_data.socket_count,
+        "cpu_die_scalar": CPU_DIE_SCALAR,
+        "cpu_base_carbon": CPU_BASE_CARBON,
+        "dram_die_scalar": DRAM_DIE_SCALAR,
+        "dram_base_carbon": DRAM_BASE_CARBON,
+        "mem_density_gb_per_sq_cm": config.mem_density,
+    }
+
+
 def _node_defaults(node_data: NodeData, config: Config) -> Manifest:
     """Build the defaults block for a single node, gating embodied fields on
     config."""
@@ -200,6 +242,7 @@ def _node_defaults(node_data: NodeData, config: Config) -> Manifest:
             {
                 "cpu_lifespan_seconds": config.cpu_lifespan_seconds,
                 "gpu_lifespan_seconds": config.gpu_lifespan_seconds,
+                **_cpu_defaults(node_data, config),
                 **_gpu_defaults(node_data, config),
             }
         )

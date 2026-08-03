@@ -8,6 +8,7 @@ from jobcarbon.config import (
     MEM_SCALARS,
     DEFAULT_YIELD_FACTOR,
     DEFAULT_ELECTRICITY_MAPS_ZONE,
+    DEFAULT_MEM_DENSITY,
     _years_to_seconds,
 )
 from jobcarbon.models import NodeData, Observation, Window
@@ -33,7 +34,15 @@ def _cfg(**kwargs) -> Config:
         electricity_maps_api_key=None,
         process_scalars=PROCESS_SCALARS,
         mem_scalars=MEM_SCALARS,
+        mem_density=DEFAULT_MEM_DENSITY,
         node_map={},
+        cpu_node_map={
+            node: {
+                "cpu_model": "Test CPU",
+                "die_area_sq_cm": 6.94,
+            }
+            for node in ("node1", "node2")
+        },
         embodied=False,
     )
     return Config(**{**defaults, **kwargs})
@@ -53,7 +62,14 @@ def _cfg_with_gpu(entry: dict, embodied: bool = False) -> Config:
         electricity_maps_api_key=None,
         process_scalars=PROCESS_SCALARS,
         mem_scalars=MEM_SCALARS,
+        mem_density=DEFAULT_MEM_DENSITY,
         node_map={"node1": entry},
+        cpu_node_map={
+            "node1": {
+                "cpu_model": "Test CPU",
+                "die_area_sq_cm": 6.94,
+            }
+        },
         embodied=embodied,
     )
 
@@ -87,6 +103,7 @@ def test_years_to_seconds():
 
 
 # --- operational step selection ---
+
 
 def test_pipeline_steps_cpu_only():
     steps = _pipeline_steps(_node(), _cfg())
@@ -155,9 +172,10 @@ def test_pipeline_steps_operational_excludes_embodied():
 
 # --- embodied steps ---
 
+
 def test_pipeline_steps_embodied_server_only_excludes_gpu():
     steps = _pipeline_steps(_node(), _cfg(embodied=True))
-    assert "server-embodied" in steps
+    assert "cpu-die-embodied" in steps
     assert "sum-embodied-gpu" not in steps
 
 
@@ -186,6 +204,7 @@ def test_pipeline_steps_embodied_gpu_missing_config_raises():
 
 # --- defaults ---
 
+
 def test_node_defaults_always_includes_allocation_fields():
     for node in [
         _node(),
@@ -204,7 +223,9 @@ def test_node_defaults_includes_gci():
 
 
 def test_node_defaults_omits_gci_when_per_observation_series_present():
-    node = _node(metrics={"grid_carbon_intensity": [{"metric": {}, "values": [(1000, 250.0)]}]})
+    node = _node(
+        metrics={"grid_carbon_intensity": [{"metric": {}, "values": [(1000, 250.0)]}]}
+    )
     defaults = _node_defaults(node, _cfg())
     assert "grid_carbon_intensity" not in defaults
 
@@ -224,18 +245,15 @@ def test_node_defaults_embodied_non_gpu_excludes_gpu_fields():
 
 # --- gpu defaults ---
 
+
 def test_gpu_defaults_pcf_excludes_estimated_fields():
-    defaults = _gpu_defaults(
-        _node(gpu_count=4), _cfg_with_gpu(_PCF_ENTRY)
-    )
+    defaults = _gpu_defaults(_node(gpu_count=4), _cfg_with_gpu(_PCF_ENTRY))
     assert "pcf_carbon_per_gpu" in defaults
     assert "die_area_sq_cm" not in defaults
 
 
 def test_gpu_defaults_estimated_excludes_pcf_fields():
-    defaults = _gpu_defaults(
-        _node(gpu_count=2), _cfg_with_gpu(_ESTIMATED_ENTRY)
-    )
+    defaults = _gpu_defaults(_node(gpu_count=2), _cfg_with_gpu(_ESTIMATED_ENTRY))
     assert "process_scalar_carbon_per_sq_cm" in defaults
     assert "mem_scalar_carbon_per_gb" in defaults
     assert "pcf_carbon_per_gpu" not in defaults
@@ -254,6 +272,7 @@ def test_gpu_defaults_unknown_mem_type_raises():
 
 
 # --- manifest generation ---
+
 
 def test_generate_manifest_operational_aggregation():
     with patch("jobcarbon.generator.align", return_value=_FAKE_OBS):

@@ -1,0 +1,7 @@
+path: builtin
+method: Multiply
+config:
+  input-parameters:
+    - dram_embodied_carbon_per_second
+    - duration
+  output-parameter: dram_embodied_carbon

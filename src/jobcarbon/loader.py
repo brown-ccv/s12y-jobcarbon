@@ -124,6 +124,18 @@ def _process_node(
             jobid=jobid,
         )
 
+    # Scaphandre exposes one socket_id per physical CPU; fall back to 1.
+    socket_count = (
+        _query_instant(
+            engine,
+            METRIC_REGISTRY["socket_count"],
+            window.end,
+            error=False,
+            node=node,
+        )
+        or 1
+    )
+
     return NodeData(
         node=node,
         window=window,
@@ -132,6 +144,7 @@ def _process_node(
         mem_total=mem_total,
         cpu_allocated=cpu_allocated,
         mem_allocated=mem_allocated,
+        socket_count=socket_count,
         gpu_count=gpu_count,
     )
 

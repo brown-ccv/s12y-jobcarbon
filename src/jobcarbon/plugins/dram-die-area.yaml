@@ -1,0 +1,6 @@
+path: builtin
+method: Divide
+config:
+  numerator: mem_total
+  denominator: mem_density_gb_per_sq_cm
+  output: dram_die_area_sq_cm
