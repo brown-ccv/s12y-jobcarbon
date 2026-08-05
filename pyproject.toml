@@ -20,6 +20,7 @@ dev = [
     "pytest>=8.0",
     "responses>=0.25",
     "docformatter>=1.7.8",
+    "ty>=0.0.67",
 ]
 
 [project.scripts]

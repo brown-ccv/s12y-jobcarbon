@@ -27,7 +27,7 @@ def _prom_int(result: PromResult) -> int:
 def _query_instant(
     engine: PrometheusEngine,
     metric: MetricDefinition,
-    timestamp: int,
+    timestamp: int | None,
     node: str = "",
     jobid: str = "",
     message: str | None = None,
@@ -147,6 +147,31 @@ def _process_node(
         socket_count=socket_count,
         gpu_count=gpu_count,
     )
+
+
+def probe_node(engine: PrometheusEngine, node: str) -> tuple[int, int, int]:
+    """Probe a node's current hardware: (socket_count, mem_total_gib, gpu_count).
+
+    Instant queries at 'now' (no job, no window). Only the fields embodied
+    carbon needs; GPU-less nodes return gpu_count 0.
+    """
+    mem_total = _query_instant(
+        engine,
+        METRIC_REGISTRY["node_mem_total"],
+        None,
+        node=node,
+        message=f"no memory capacity data for node {node}",
+    )
+    socket_count = (
+        _query_instant(
+            engine, METRIC_REGISTRY["socket_count"], None, node=node, error=False
+        )
+        or 1
+    )
+    gpu_count = _query_instant(
+        engine, METRIC_REGISTRY["gpu_count_node"], None, node=node, error=False
+    )
+    return socket_count, mem_total, gpu_count
 
 
 def process_job(engine: PrometheusEngine, jobid: str, config: Config) -> list[NodeData]:

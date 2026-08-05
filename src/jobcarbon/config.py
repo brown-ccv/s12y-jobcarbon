@@ -97,6 +97,10 @@ class Config:
     node_map: dict[str, GpuSpec] = field(repr=False)
     cpu_node_map: dict[str, CpuSpec] = field(repr=False)
     embodied: bool = False
+    cpu_die_scalar: float = field(default=CPU_DIE_SCALAR, repr=False)
+    cpu_base_carbon: float = field(default=CPU_BASE_CARBON, repr=False)
+    dram_die_scalar: float = field(default=DRAM_DIE_SCALAR, repr=False)
+    dram_base_carbon: float = field(default=DRAM_BASE_CARBON, repr=False)
 
     @classmethod
     def load(cls, path: Path | None = None, embodied: bool = False) -> "Config":
@@ -111,6 +115,11 @@ class Config:
         JOBCARBON_MAX_SAMPLES           — max samples per Prometheus query chunk
         JOBCARBON_ELECTRICITY_MAPS_ZONE — Electricity Maps zone identifier
         JOBCARBON_ELECTRICITY_MAPS_API_KEY — Electricity Maps API key (env only, no file fallback)
+        JOBCARBON_MEM_DENSITY_GB_PER_SQ_CM — DRAM die density (GB/cm2)
+        JOBCARBON_CPU_DIE_SCALAR        — CPU embodied die scalar (gCO2eq/cm2)
+        JOBCARBON_CPU_BASE_CARBON       — CPU embodied base carbon (gCO2eq/CPU)
+        JOBCARBON_DRAM_DIE_SCALAR       — DRAM embodied die scalar (gCO2eq/cm2)
+        JOBCARBON_DRAM_BASE_CARBON      — DRAM embodied base carbon (gCO2eq/module)
         """
         config_path = path if path is not None else get_config_file()
         with config_path.open("rb") as f:
@@ -146,6 +155,16 @@ class Config:
             mem_scalars=dict(raw.get("mem_scalars", MEM_SCALARS)),
             mem_density=_env_override(
                 raw, "mem_density_gb_per_sq_cm", float, DEFAULT_MEM_DENSITY
+            ),
+            cpu_die_scalar=_env_override(raw, "cpu_die_scalar", float, CPU_DIE_SCALAR),
+            cpu_base_carbon=_env_override(
+                raw, "cpu_base_carbon", float, CPU_BASE_CARBON
+            ),
+            dram_die_scalar=_env_override(
+                raw, "dram_die_scalar", float, DRAM_DIE_SCALAR
+            ),
+            dram_base_carbon=_env_override(
+                raw, "dram_base_carbon", float, DRAM_BASE_CARBON
             ),
             node_map=_build_node_map(raw.get("gpus", [])),
             cpu_node_map=_build_node_map(raw.get("cpus", []), "cpu_model"),

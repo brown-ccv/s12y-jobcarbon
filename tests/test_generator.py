@@ -14,9 +14,9 @@ from jobcarbon.models import NodeData, Observation, Window
 from jobcarbon.generator import (
     _pipeline_steps,
     _node_defaults,
-    _gpu_defaults,
     generate_manifest,
 )
+from jobcarbon.embodied import gpu_embodied_inputs
 
 
 def _cfg(**kwargs) -> Config:
@@ -244,13 +244,13 @@ def test_node_defaults_embodied_non_gpu_excludes_gpu_fields():
 
 
 def test_gpu_defaults_pcf_excludes_estimated_fields():
-    defaults = _gpu_defaults(_node(gpu_count=4), _cfg_with_gpu(_PCF_ENTRY))
+    defaults = gpu_embodied_inputs("node1", 4, _cfg_with_gpu(_PCF_ENTRY))
     assert "pcf_carbon_per_gpu" in defaults
     assert "die_area_sq_cm" not in defaults
 
 
 def test_gpu_defaults_estimated_excludes_pcf_fields():
-    defaults = _gpu_defaults(_node(gpu_count=2), _cfg_with_gpu(_ESTIMATED_ENTRY))
+    defaults = gpu_embodied_inputs("node1", 2, _cfg_with_gpu(_ESTIMATED_ENTRY))
     assert "process_scalar_carbon_per_sq_cm" in defaults
     assert "mem_scalar_carbon_per_gb" in defaults
     assert "pcf_carbon_per_gpu" not in defaults
@@ -259,13 +259,13 @@ def test_gpu_defaults_estimated_excludes_pcf_fields():
 def test_gpu_defaults_unknown_process_raises():
     entry = {**_ESTIMATED_ENTRY, "process": "intel-4"}
     with pytest.raises(ValueError, match="unknown process"):
-        _gpu_defaults(_node(gpu_count=1), _cfg_with_gpu(entry))
+        gpu_embodied_inputs("node1", 1, _cfg_with_gpu(entry))
 
 
 def test_gpu_defaults_unknown_mem_type_raises():
     entry = {**_ESTIMATED_ENTRY, "mem_type": "ddr5"}
     with pytest.raises(ValueError, match="unknown mem_type"):
-        _gpu_defaults(_node(gpu_count=1), _cfg_with_gpu(entry))
+        gpu_embodied_inputs("node1", 1, _cfg_with_gpu(entry))
 
 
 # --- manifest generation ---

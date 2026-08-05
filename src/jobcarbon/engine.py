@@ -73,13 +73,20 @@ class PrometheusEngine:
         return self._query_range_standard(metric, window, node, jobid)
 
     def query_instant(
-        self, metric: MetricDefinition, time: int, node: str = "", jobid: str = ""
+        self,
+        metric: MetricDefinition,
+        time: int | None = None,
+        node: str = "",
+        jobid: str = "",
     ) -> PromResult:
-        """Instant query at a specific Unix timestamp."""
+        """Instant query at a Unix timestamp, or now if time is None."""
         query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
+        params: dict[str, str | int] = {"query": query}
+        if time is not None:
+            params["time"] = time
         response = requests.get(
             f"{self.base_url}/api/v1/query",
-            params={"query": query, "time": time},
+            params=params,
         )
         return self._parse_response(response)
 

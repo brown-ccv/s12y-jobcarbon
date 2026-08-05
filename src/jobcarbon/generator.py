@@ -1,19 +1,15 @@
 import dataclasses
 import logging
-from typing import Any, cast
+from typing import Any
 
 import yaml
 from importlib import resources
 
 from .config import (
     Config,
-    CPU_BASE_CARBON,
-    CPU_DIE_SCALAR,
-    DRAM_BASE_CARBON,
-    DRAM_DIE_SCALAR,
-    EstimatedGpuSpec,
     is_pcf_spec,
 )
+from .embodied import cpu_embodied_inputs, gpu_embodied_inputs
 from .models import NodeData
 from .alignment import align
 
@@ -167,64 +163,6 @@ def _pipeline_steps(node_data: NodeData, config: Config) -> list[str]:
     return steps
 
 
-def _gpu_defaults(node_data: NodeData, config: Config) -> Manifest:
-    """Return embodied GPU defaults to inject into the node defaults block."""
-    if not node_data.gpu_count:
-        return {}
-    entry = config.gpu_for_node(node_data.node)
-    if entry is None:
-        raise ValueError(
-            f"node '{node_data.node}' has a GPU profile but is not in gpu_config"
-        )
-
-    if is_pcf_spec(entry):
-        return {
-            "gpu_count": node_data.gpu_count,
-            "pcf_carbon_per_gpu": entry["pcf_carbon_per_gpu"],
-        }
-
-    estimated = cast(EstimatedGpuSpec, entry)
-    process = estimated.get("process")
-    mem_type = estimated.get("mem_type")
-    if process not in config.process_scalars:
-        raise ValueError(
-            f"unknown process {process!r} — must be one of: {', '.join(sorted(config.process_scalars))}"
-        )
-    if mem_type not in config.mem_scalars:
-        raise ValueError(
-            f"unknown mem_type {mem_type!r} — must be one of: {', '.join(sorted(config.mem_scalars))}"
-        )
-    if process == "samsung-8n":
-        logger.warning(
-            "GPU '%s': samsung-8n is not in Boakes et al.; using TSMC N7 scalar as proxy.",
-            estimated.get("gpu_model", "unknown"),
-        )
-
-    return {
-        "gpu_count": node_data.gpu_count,
-        "die_area_sq_cm": estimated["die_area_sq_cm"],
-        "vram_gb": estimated["vram_gb"],
-        "process_scalar_carbon_per_sq_cm": config.process_scalars[process],
-        "mem_scalar_carbon_per_gb": config.mem_scalars[mem_type],
-    }
-
-
-def _cpu_defaults(node_data: NodeData, config: Config) -> Manifest:
-    """Return embodied CPU/DRAM defaults to inject into the node defaults block."""
-    entry = config.cpu_for_node(node_data.node)
-    if entry is None:
-        raise ValueError(f"node '{node_data.node}' has no [[cpus]] entry in the config")
-    return {
-        "die_area_sq_cm": entry["die_area_sq_cm"],
-        "socket_count": node_data.socket_count,
-        "cpu_die_scalar": CPU_DIE_SCALAR,
-        "cpu_base_carbon": CPU_BASE_CARBON,
-        "dram_die_scalar": DRAM_DIE_SCALAR,
-        "dram_base_carbon": DRAM_BASE_CARBON,
-        "mem_density_gb_per_sq_cm": config.mem_density,
-    }
-
-
 def _node_defaults(node_data: NodeData, config: Config) -> Manifest:
     """Build the defaults block for a single node, gating embodied fields on
     config."""
@@ -240,8 +178,8 @@ def _node_defaults(node_data: NodeData, config: Config) -> Manifest:
             {
                 "cpu_lifespan_seconds": config.cpu_lifespan_seconds,
                 "gpu_lifespan_seconds": config.gpu_lifespan_seconds,
-                **_cpu_defaults(node_data, config),
-                **_gpu_defaults(node_data, config),
+                **cpu_embodied_inputs(node_data.node, node_data.socket_count, config),
+                **gpu_embodied_inputs(node_data.node, node_data.gpu_count, config),
             }
         )
     return defaults

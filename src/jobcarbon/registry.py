@@ -53,4 +53,9 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
         id="socket_count",
         query="count(count by (socket_id) (scaph_socket_power_microwatts{{instance=~'{node}:.*'}}))",
     ),
+    # Node-scoped GPU count (no jobid); direct gauge, no job need be running.
+    "gpu_count_node": MetricDefinition(
+        id="gpu_count_node",
+        query="nvidia_gpu_num_devices{{instance=~'{node}:.*'}}",
+    ),
 }
