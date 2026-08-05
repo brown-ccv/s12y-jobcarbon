@@ -9,3 +9,4 @@ output*.yaml
 .pytest_cache/
 .jj/
 .venv/
+papers/

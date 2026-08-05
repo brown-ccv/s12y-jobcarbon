@@ -211,31 +211,31 @@ gpu_embodied_carbon           = gpu_embodied_carbon_per_second × duration      
 
 All intermediate carbon fields are in gCO2eq. `process_scalar_carbon_per_sq_cm` and `mem_scalar_carbon_per_gb` are injected into each node's `defaults` block by the generator, resolved from the GPU's `process` and `mem_type` fields in `config/jobcarbon.toml`
 
-**Yield correction**
+**No separate yield correction**
 
-The paper figures below are per cm² of wafer area processed. A yield correction divides by the fraction of dies that are functional, allocating the full wafer carbon to good dies only. A **conservative yield of 90% (0.9)** is assumed. Boakes et al. ([IEEE IEDM 2023][boakes2023]) report that large GPU dies (e.g. GA102 at 628 mm²) have a peak yield of approximately 55%; smaller or older dies yield considerably higher. Using 90% understates the embodied carbon per good die for large dies — estimates derived from it should be read as lower bounds.
+The Boakes figures below are already yield-corrected. Their functional unit is expressed "per wafer, cm², or die, which considers the functional area (taking die yield and placement into account)" — i.e. total wafer carbon allocated over *good* die area, with the paper's line (90%), die (86%), and cut (72%) yields baked in. The per-cm² scalar is used as published; no additional yield factor is applied (an earlier `/0.9` step double-counted yield and has been removed).
 
-Yield correction is applied when computing `process_scalar_carbon_per_sq_cm` in `config.py` (i.e., `wafer_scalar / 0.9`). It is **not** a pipeline step in the manifest; the value injected into each node's `defaults` block is already yield-corrected.
+One residual bias remains. The paper's per-cm² figure is calibrated on a 100 mm² (10×10 mm) reference die. GPU compute dies are 6–8× larger (≈600–850 mm²), and Boakes et al. Fig. 10 shows total emissions per die rise *super-linearly* with area because Murphy die-yield collapses on large dies. A flat per-cm² scalar therefore **underestimates** large GPU dies, more so the bigger the die — estimates should be read as conservative lower bounds. Correcting this properly requires running the Murphy yield model at each GPU's actual die area, which is deliberately not done here.
 
 **Manufacturing process scalar** (resolved from `process` in `config/jobcarbon.toml`):
 
-Scalars are derived from per-process-node global warming potential (GWP) figures in Boakes et al., "Cradle-to-gate life cycle assessment of CMOS logic technologies," [IEEE IEDM 2023][boakes2023] (Table II). The paper covers TSMC nodes N28 through A14. Yield correction at 90% is applied on top of the wafer-level figures.
+Scalars are the per-process-node functional-unit GWP figures (gCO2eq/cm²) from Boakes et al., "Cradle-to-gate life cycle assessment of CMOS logic technologies," [IEEE IEDM 2023][boakes2023] (Fig. 5/7). The paper covers TSMC nodes N28 through A14.
 
 When multiple EUV/non-EUV variants exist for the same nominal node, the lower (less carbon-intensive) figure is used as a conservative estimate.
 
-| `process_nm` | TSMC node | Wafer kgCO2eq/cm² (Boakes) | Yield-corrected `process_scalar_carbon_per_sq_cm` (gCO2eq/cm²) |
-|---|---|---|---|
-| 28 | N28 | 1.38 | 1533 |
-| 20 | N20 | 1.47 | 1633 |
-| 14 | N14 | 1.55 | 1722 |
-| 10 | N10 | 1.78 | 1978 |
-| 7 | N7 (non-EUV) / N7EUV lower | 2.06 | 2289 |
-| 5 | N5 | 2.42 | 2689 |
-| 4 | N3 (closest documented) | 2.74 | 3044 |
-| 3 | N3 | 2.74 | 3044 |
-| 2 | N2 | 2.73 | 3033 |
+| `process_nm` | TSMC node | `process_scalar_carbon_per_sq_cm` (gCO2eq/cm²) |
+|---|---|---|
+| 28 | N28 | 1380 |
+| 20 | N20 | 1470 |
+| 14 | N14 | 1550 |
+| 10 | N10 | 1780 |
+| 7 | N7 (non-EUV) / N7EUV lower | 2060 |
+| 5 | N5 | 2420 |
+| 4 | N3 (closest documented) | 2740 |
+| 3 | N3 | 2740 |
+| 2 | N2 | 2730 |
 
-**Samsung 8N exception:** GA102-based GPUs on Oscar (RTX 3090, A5000, A5500, A40, A6000 (Ampere), A2) are manufactured on Samsung 8N. Samsung 8N is not covered by Boakes et al., which is TSMC-specific. TSMC N7 (yield-corrected scalar 2289 gCO2eq/cm²) is used as a conservative proxy — Samsung 8N is a derivative of N10/N7-class lithography and N7 is the closest documented analogue in the conservative direction. These entries are flagged `process: samsung-8n` in `config/jobcarbon.toml`; `config.py` maps `samsung-8n` → the N7 scalar with a logged warning.
+**Samsung 8N exception:** GA102-based GPUs on Oscar (RTX 3090, A5000, A5500, A40, A6000 (Ampere), A2) are manufactured on Samsung 8N. Samsung 8N is not covered by Boakes et al., which is TSMC-specific. TSMC N7 (scalar 2060 gCO2eq/cm²) is used as a conservative proxy — Samsung 8N is a derivative of N10/N7-class lithography and N7 is the closest documented analogue in the conservative direction. These entries are flagged `process: samsung-8n` in `config/jobcarbon.toml`; `config.py` maps `samsung-8n` → the N7 scalar with a logged warning.
 
 **Memory type scalar** (resolved from `mem_type` in `config/jobcarbon.toml`):
 

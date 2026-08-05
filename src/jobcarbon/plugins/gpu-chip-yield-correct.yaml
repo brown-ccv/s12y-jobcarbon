@@ -1,6 +1,0 @@
-path: builtin
-method: Divide
-config:
-  numerator: chip_embodied_carbon
-  denominator: yield_factor
-  output: chip_embodied_carbon

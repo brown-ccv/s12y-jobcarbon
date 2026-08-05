@@ -9,7 +9,6 @@ from typing import Any, TypeGuard, TypedDict
 from .utils import get_config_file
 
 DEFAULT_GRID_CARBON_INTENSITY = 381  # gCO2eq/kWh, Rhode Island grid average 2023
-DEFAULT_YIELD_FACTOR = 0.9
 DEFAULT_CPU_LIFESPAN_YEARS = 5
 DEFAULT_GPU_LIFESPAN_YEARS = 5
 DEFAULT_PROMETHEUS_URL = "http://172.20.11.1:9390"
@@ -18,7 +17,12 @@ DEFAULT_LOOKBACK_DAYS = 30
 DEFAULT_MAX_SAMPLES = 10000
 DEFAULT_ELECTRICITY_MAPS_ZONE = "US-NE-ISNE"
 
-# Raw wafer GWP in gCO2eq/cm2 (pre-yield-correction).
+# Functional-area GWP in gCO2eq/cm2 (Boakes et al. Fig. 5/7). Already yield-
+# corrected: their per-cm2 functional unit accounts for line, die, and cut
+# yield, so no separate yield factor is applied.
+# ponytail: calibrated on a 100mm2 reference die; large GPU dies (600-850mm2)
+# are underestimated since Murphy yield falls super-linearly with area (Fig.
+# 10). Conservative bias; apply per-die Murphy yield if that matters.
 # "samsung-8n" is not in Boakes et al.; TSMC N7 is used as a proxy.
 # "tsmc-12n" maps to N14 (architecturally closest).
 # "tsmc-n4" / "tsmc-n4p" map to N3 (closest documented in Boakes et al.).
@@ -85,7 +89,6 @@ class Config:
     step_seconds: int
     lookback_days: int
     max_samples: int
-    yield_factor: float
     electricity_maps_zone: str
     electricity_maps_api_key: str | None
     process_scalars: dict[str, float] = field(repr=False)
@@ -106,7 +109,6 @@ class Config:
         JOBCARBON_STEP_SECONDS          — scrape resolution in seconds
         JOBCARBON_LOOKBACK_DAYS         — range for job/node discovery
         JOBCARBON_MAX_SAMPLES           — max samples per Prometheus query chunk
-        JOBCARBON_YIELD_FACTOR          — wafer die yield for chip embodied carbon
         JOBCARBON_ELECTRICITY_MAPS_ZONE — Electricity Maps zone identifier
         JOBCARBON_ELECTRICITY_MAPS_API_KEY — Electricity Maps API key (env only, no file fallback)
         """
@@ -128,7 +130,6 @@ class Config:
         step_seconds = _env_override(raw, "step_seconds", int, DEFAULT_STEP_SECONDS)
         lookback_days = _env_override(raw, "lookback_days", int, DEFAULT_LOOKBACK_DAYS)
         max_samples = _env_override(raw, "max_samples", int, DEFAULT_MAX_SAMPLES)
-        yield_factor = _env_override(raw, "yield_factor", float, DEFAULT_YIELD_FACTOR)
         electricity_maps_zone = _env_override(
             raw, "electricity_maps_zone", str, DEFAULT_ELECTRICITY_MAPS_ZONE
         )
@@ -140,7 +141,6 @@ class Config:
             step_seconds=step_seconds,
             lookback_days=lookback_days,
             max_samples=max_samples,
-            yield_factor=yield_factor,
             electricity_maps_zone=electricity_maps_zone,
             process_scalars=dict(raw.get("process_scalars", PROCESS_SCALARS)),
             mem_scalars=dict(raw.get("mem_scalars", MEM_SCALARS)),

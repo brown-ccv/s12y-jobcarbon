@@ -97,7 +97,6 @@ EMBODIED_STEPS_GPU_PCF = [
 EMBODIED_STEPS_GPU_ESTIMATED = [
     *EMBODIED_STEPS_CPU_DRAM,
     "gpu-chip-embodied",
-    "gpu-chip-yield-correct",
     "gpu-vram-embodied",
     "gpu-embodied-per-gpu",
     "gpu-embodied-total",
@@ -207,7 +206,6 @@ def _gpu_defaults(node_data: NodeData, config: Config) -> Manifest:
         "vram_gb": estimated["vram_gb"],
         "process_scalar_carbon_per_sq_cm": config.process_scalars[process],
         "mem_scalar_carbon_per_gb": config.mem_scalars[mem_type],
-        "yield_factor": config.yield_factor,
     }
 
 
