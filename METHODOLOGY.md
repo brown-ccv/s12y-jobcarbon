@@ -61,9 +61,11 @@ Operational carbon per interval is:
 carbon_operational (gCO2eq) = grid_carbon_intensity (gCO2eq/kWh) × energy (kWh)
 ```
 
-The grid carbon intensity is hardcoded at **381 gCO2eq/kWh**. This value is derived from the [EPA eGRID 2022][egrid2022] dataset, which reports an annual average CO2-equivalent emission rate of **840 lb CO2eq/MWh** for Rhode Island 
+`grid_carbon_intensity` is resolved one of two ways:
 
-This is a static annual average. It does not reflect the temporal variation in grid carbon intensity across hours, days, or seasons The plan to replace this with temporally-resolved marginal intensity (MOER) is described in `FUTURE.md`
+**Dynamic (used whenever an API key is set).** When `JOBCARBON_ELECTRICITY_MAPS_API_KEY` is present, `loader.py` fetches per-hour **direct** carbon intensity from [Electricity Maps][electricitymaps] (`/v3/carbon-intensity/past-range`) over the job's time window, for the configured zone (`JOBCARBON_ELECTRICITY_MAPS_ZONE`, default `US-NE-ISNE`). The series is expanded to `step_seconds` resolution by nearest-neighbour assignment and becomes a per-timestep `grid_carbon_intensity` field on each observation, so operational carbon tracks the grid's actual variation across hours and seasons. Windows longer than the API's per-granularity range limit are fetched in chunks. `direct` (operational combustion) intensity is used rather than `lifecycle`: SCI operational carbon measures emissions caused by the job's electricity draw, not upstream fuel extraction or plant construction.
+
+**Static fallback.** When no API key is set — or the lookup fails or returns no data for the window — a single scalar of **381 gCO2eq/kWh** is injected into `defaults`. This is the annual-average CO2-equivalent emission rate for the Rhode Island grid ([EPA eGRID][egrid2022], 840 lb CO2eq/MWh), overridable via `JOBCARBON_GRID_CARBON_INTENSITY`. A static annual average erases temporal variation, so the dynamic path is preferred when a key is available.
 
 ## 4. Per-Component Power Attribution
 
@@ -298,6 +300,7 @@ No normalization denominator is applied. For cross-job comparison on a per-resou
 
 [if-spec]: https://if.greensoftware.foundation/
 [egrid2022]: https://www.epa.gov/egrid/detailed-data
+[electricitymaps]: https://www.electricitymaps.com/
 [a100-lca]: https://arxiv.org/abs/2509.00093
 [h100-pcf]: https://images.nvidia.com/aem-dam/Solutions/documents/HGX-H100-PCF-Summary.pdf
 [b200-pcf]: https://images.nvidia.com/aem-dam/Solutions/documents/HGX-B200-PCF-Summary.pdf
