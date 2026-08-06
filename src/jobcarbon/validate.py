@@ -1,4 +1,4 @@
-from .config import Config, is_pcf_spec
+from .config import Config, gpu_direct_carbon
 
 
 def find_problems(config: Config) -> list[str]:
@@ -34,7 +34,7 @@ def find_problems(config: Config) -> list[str]:
         if model in seen_gpu:
             continue
         seen_gpu.add(model)
-        if is_pcf_spec(spec):
+        if gpu_direct_carbon(spec) is not None:
             continue
         for key in ("die_area_sq_cm", "vram_gb"):
             if key not in spec:

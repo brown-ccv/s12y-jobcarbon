@@ -81,12 +81,9 @@ class PrometheusEngine:
     ) -> PromResult:
         """Instant query at a Unix timestamp, or now if time is None."""
         query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
-        params: dict[str, str | int] = {"query": query}
-        if time is not None:
-            params["time"] = time
         response = requests.get(
             f"{self.base_url}/api/v1/query",
-            params=params,
+            params={"query": query, "time": time},
         )
         return self._parse_response(response)
 

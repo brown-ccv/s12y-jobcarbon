@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Python CLI that queries Prometheus for OSCAR Slurm job telemetry and emits a
+Python CLI that queries Prometheus for Oscar Slurm job telemetry and emits a
 complete [Impact Framework](https://if.greensoftware.foundation/) (`if-run`)
 manifest YAML. It does **not** run `if-run` itself.
 

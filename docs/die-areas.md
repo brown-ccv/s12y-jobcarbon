@@ -96,16 +96,17 @@ VRAM term); see METHODOLOGY.md §5.
 | NVIDIA GH200 480GB | GH100 | tsmc-n4 | 8.14 | [Chips and Cheese][cnc-h100] |
 | NVIDIA RTX Pro 6000 Blackwell Max-Q | GB202 | tsmc-n4p | 7.50 † | [Chips and Cheese][cnc-blackwell] |
 
-## Manufacturer PCF (no die area)
+## Directly-sourced figure (no die area)
 
-These use a published product carbon footprint instead of the die-area estimate. The stored
-per-GPU value divides baseboard PCFs (8 GPUs) by 8.
+These use a published cradle-to-gate figure instead of the die-area estimate — a manufacturer
+PCF (stored as `pcf_carbon_per_gpu`) or a third-party LCA (stored as `lca_carbon_per_gpu`). The
+manufacturer PCFs are baseboard figures (8 GPUs) divided by 8; the A100 LCA is already per-GPU.
 
-| GPU model | per-GPU PCF (gCO2eq) | source |
-|---|---|---|
-| NVIDIA A100 SXM4 80GB | 127,600 | [A100 LCA (arXiv 2509.00093)][a100-lca] |
-| NVIDIA H100 SXM5 80GB | 164,000 (1,312,000 / 8) | [NVIDIA HGX-H100 PCF][h100-pcf] |
-| NVIDIA B200 | 284,250 (2,274,000 / 8) | [NVIDIA HGX-B200 PCF][b200-pcf] |
+| GPU model | per-GPU gCO2eq | config key | source |
+|---|---|---|---|
+| NVIDIA A100 SXM4 80GB | 127,600 | `lca_carbon_per_gpu` | [A100 LCA (arXiv 2509.00093)][a100-lca] |
+| NVIDIA H100 SXM5 80GB | 164,000 (1,312,000 / 8) | `pcf_carbon_per_gpu` | [NVIDIA HGX-H100 PCF][h100-pcf] |
+| NVIDIA B200 | 284,250 (2,274,000 / 8) | `pcf_carbon_per_gpu` | [NVIDIA HGX-B200 PCF][b200-pcf] |
 
 ---
 

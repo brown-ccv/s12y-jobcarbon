@@ -40,6 +40,5 @@ class Observation:
     duration: int
     cpu_power: float | None = None
     dram_power: float | None = None
-    host_power: float | None = None
     gpu_power: float | None = None
     grid_carbon_intensity: float | None = None

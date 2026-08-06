@@ -85,6 +85,7 @@ def _node(metrics: dict | None = None, gpu_count: int = 0) -> NodeData:
 
 
 _PCF_ENTRY = {"gpu_model": "NVIDIA A100", "pcf_carbon_per_gpu": 127600.0}
+_LCA_ENTRY = {"gpu_model": "NVIDIA A100", "lca_carbon_per_gpu": 127600.0}
 _ESTIMATED_ENTRY = {
     "gpu_model": "NVIDIA RTX A5000",
     "die_area_sq_cm": 6.28,
@@ -181,7 +182,7 @@ def test_pipeline_steps_embodied_gpu_pcf_excludes_estimated():
         _node(gpu_count=4),
         _cfg_with_gpu(_PCF_ENTRY, embodied=True),
     )
-    assert "gpu-embodied-pcf" in steps
+    assert "gpu-embodied-direct" in steps
     assert "gpu-chip-embodied" not in steps
 
 
@@ -191,7 +192,7 @@ def test_pipeline_steps_embodied_gpu_estimated_excludes_pcf():
         _cfg_with_gpu(_ESTIMATED_ENTRY, embodied=True),
     )
     assert "gpu-chip-embodied" in steps
-    assert "gpu-embodied-pcf" not in steps
+    assert "gpu-embodied-direct" not in steps
 
 
 def test_pipeline_steps_embodied_gpu_missing_config_raises():
@@ -237,7 +238,7 @@ def test_node_defaults_embodied_gates_on_flag():
 def test_node_defaults_embodied_non_gpu_excludes_gpu_fields():
     defaults = _node_defaults(_node(), _cfg(embodied=True))
     assert "gpu_count" not in defaults
-    assert "pcf_carbon_per_gpu" not in defaults
+    assert "embodied_carbon_per_gpu" not in defaults
 
 
 # --- gpu defaults ---
@@ -245,7 +246,13 @@ def test_node_defaults_embodied_non_gpu_excludes_gpu_fields():
 
 def test_gpu_defaults_pcf_excludes_estimated_fields():
     defaults = gpu_embodied_inputs("node1", 4, _cfg_with_gpu(_PCF_ENTRY))
-    assert "pcf_carbon_per_gpu" in defaults
+    assert "embodied_carbon_per_gpu" in defaults
+    assert "die_area_sq_cm" not in defaults
+
+
+def test_gpu_defaults_lca_excludes_estimated_fields():
+    defaults = gpu_embodied_inputs("node1", 4, _cfg_with_gpu(_LCA_ENTRY))
+    assert "embodied_carbon_per_gpu" in defaults
     assert "die_area_sq_cm" not in defaults
 
 
@@ -253,7 +260,7 @@ def test_gpu_defaults_estimated_excludes_pcf_fields():
     defaults = gpu_embodied_inputs("node1", 2, _cfg_with_gpu(_ESTIMATED_ENTRY))
     assert "process_scalar_carbon_per_sq_cm" in defaults
     assert "mem_scalar_carbon_per_gb" in defaults
-    assert "pcf_carbon_per_gpu" not in defaults
+    assert "embodied_carbon_per_gpu" not in defaults
 
 
 def test_gpu_defaults_unknown_process_raises():

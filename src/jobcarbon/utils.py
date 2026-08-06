@@ -3,14 +3,6 @@ from pathlib import Path
 from typing import Any
 
 
-def output_text(content: str, path: Path | None) -> None:
-    """Print to file or stdout."""
-    if path is not None:
-        path.write_text(content)
-    else:
-        print(content, end="")
-
-
 def get_config_file() -> Path:
     """Return the config file path, searching standard locations."""
     xdg_cfg = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")

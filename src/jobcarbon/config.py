@@ -1,31 +1,25 @@
 import os
-import re
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypeGuard, TypedDict
+from typing import Any, TypedDict, cast
 
 from .utils import get_config_file
 
 DEFAULT_GRID_CARBON_INTENSITY = 381  # gCO2eq/kWh, Rhode Island grid average 2023
 DEFAULT_CPU_LIFESPAN_YEARS = 5
 DEFAULT_GPU_LIFESPAN_YEARS = 5
-DEFAULT_PROMETHEUS_URL = "http://172.20.11.1:9390"
+DEFAULT_PROMETHEUS_URL = "http://localhost:9390"
 DEFAULT_STEP_SECONDS = 60
 DEFAULT_LOOKBACK_DAYS = 30
 DEFAULT_MAX_SAMPLES = 10000
 DEFAULT_ELECTRICITY_MAPS_ZONE = "US-NE-ISNE"
 
-# Functional-area GWP in gCO2eq/cm2 (Boakes et al. Fig. 5/7). Already yield-
-# corrected: their per-cm2 functional unit accounts for line, die, and cut
-# yield, so no separate yield factor is applied.
-# ponytail: calibrated on a 100mm2 reference die; large GPU dies (600-850mm2)
-# are underestimated since Murphy yield falls super-linearly with area (Fig.
-# 10). Conservative bias; apply per-die Murphy yield if that matters.
-# "samsung-8n" is not in Boakes et al.; TSMC N7 is used as a proxy.
-# "tsmc-12n" maps to N14 (architecturally closest).
-# "tsmc-n4" / "tsmc-n4p" map to N3 (closest documented in Boakes et al.).
+# Functional-area GWP in gCO2eq/cm2 (Boakes et al. Fig. 5/7)
+# "samsung-8n" is not in Boakes et al.; TSMC N7 is used as a proxy
+# "tsmc-12n" maps to N14 (architecturally closest)
+# "tsmc-n4" / "tsmc-n4p" map to N3 (closest documented in Boakes et al.)
 PROCESS_SCALARS: dict[str, float] = {
     "tsmc-n28": 1380,
     "tsmc-n20": 1470,
@@ -49,7 +43,7 @@ MEM_SCALARS: dict[str, float] = {
     "hbm3": 900,
 }
 
-# BoaviztAPI bottom-up embodied carbon constants (gCO2eq, cm2).
+# BoaviztAPI bottom-up embodied carbon constants (gCO2eq, cm2)
 # Source: de Rancourt et al., "BoaviztAPI: A Bottom-Up Model to Assess the
 # Environmental Impacts of Cloud Services."
 CPU_DIE_SCALAR = 1970  # gCO2eq/cm2  (1.97 kgCO2eq/cm2)
@@ -64,6 +58,11 @@ class PcfGpuSpec(TypedDict):
     pcf_carbon_per_gpu: float
 
 
+class LcaGpuSpec(TypedDict):
+    gpu_model: str
+    lca_carbon_per_gpu: float
+
+
 class EstimatedGpuSpec(TypedDict):
     gpu_model: str
     die_area_sq_cm: float
@@ -72,7 +71,7 @@ class EstimatedGpuSpec(TypedDict):
     mem_type: str
 
 
-type GpuSpec = PcfGpuSpec | EstimatedGpuSpec
+type GpuSpec = PcfGpuSpec | LcaGpuSpec | EstimatedGpuSpec
 
 
 class CpuSpec(TypedDict):
@@ -106,20 +105,20 @@ class Config:
     def load(cls, path: Path | None = None, embodied: bool = False) -> "Config":
         """Load jobcarbon.toml; env vars override file values.
 
-        JOBCARBON_GRID_CARBON_INTENSITY — gCO2eq/kWh
-        JOBCARBON_CPU_LIFESPAN_YEARS    — server amortisation period
-        JOBCARBON_GPU_LIFESPAN_YEARS    — GPU amortisation period
-        JOBCARBON_PROMETHEUS_URL        — Prometheus base URL
-        JOBCARBON_STEP_SECONDS          — scrape resolution in seconds
-        JOBCARBON_LOOKBACK_DAYS         — range for job/node discovery
-        JOBCARBON_MAX_SAMPLES           — max samples per Prometheus query chunk
-        JOBCARBON_ELECTRICITY_MAPS_ZONE — Electricity Maps zone identifier
-        JOBCARBON_ELECTRICITY_MAPS_API_KEY — Electricity Maps API key (env only, no file fallback)
-        JOBCARBON_MEM_DENSITY_GB_PER_SQ_CM — DRAM die density (GB/cm2)
-        JOBCARBON_CPU_DIE_SCALAR        — CPU embodied die scalar (gCO2eq/cm2)
-        JOBCARBON_CPU_BASE_CARBON       — CPU embodied base carbon (gCO2eq/CPU)
-        JOBCARBON_DRAM_DIE_SCALAR       — DRAM embodied die scalar (gCO2eq/cm2)
-        JOBCARBON_DRAM_BASE_CARBON      — DRAM embodied base carbon (gCO2eq/module)
+        JOBCARBON_GRID_CARBON_INTENSITY - gCO2eq/kWh
+        JOBCARBON_CPU_LIFESPAN_YEARS    - server amortisation period
+        JOBCARBON_GPU_LIFESPAN_YEARS    - GPU amortisation period
+        JOBCARBON_PROMETHEUS_URL        - Prometheus base URL
+        JOBCARBON_STEP_SECONDS          - scrape resolution in seconds
+        JOBCARBON_LOOKBACK_DAYS         - range for job/node discovery
+        JOBCARBON_MAX_SAMPLES           - max samples per Prometheus query chunk
+        JOBCARBON_ELECTRICITY_MAPS_ZONE - Electricity Maps zone identifier
+        JOBCARBON_ELECTRICITY_MAPS_API_KEY - Electricity Maps API key (env only, no file fallback)
+        JOBCARBON_MEM_DENSITY_GB_PER_SQ_CM - DRAM die density (GB/cm2)
+        JOBCARBON_CPU_DIE_SCALAR        - CPU embodied die scalar (gCO2eq/cm2)
+        JOBCARBON_CPU_BASE_CARBON       - CPU embodied base carbon (gCO2eq/CPU)
+        JOBCARBON_DRAM_DIE_SCALAR       - DRAM embodied die scalar (gCO2eq/cm2)
+        JOBCARBON_DRAM_BASE_CARBON      - DRAM embodied base carbon (gCO2eq/module)
         """
         config_path = path if path is not None else get_config_file()
         with config_path.open("rb") as f:
@@ -202,9 +201,6 @@ def _build_node_map(
     return node_map
 
 
-_BRACKET = re.compile(r"^(.*?)\[([^\]]+)\](.*)$")
-
-
 def parse_hostlist(hostlist: str) -> list[str]:
     """Parse a Slurm hostlist string into individual hostnames.
 
@@ -214,11 +210,11 @@ def parse_hostlist(hostlist: str) -> list[str]:
     """
     hosts: list[str] = []
     for token in _split_top_level(hostlist):
-        match = _BRACKET.match(token)
-        if not match:
+        prefix, sep, rest = token.partition("[")
+        if not sep:
             hosts.append(token)
             continue
-        prefix, body, suffix = match.groups()
+        body, _, suffix = rest.partition("]")
         for part in body.split(","):
             part = part.strip()
             if "-" not in part:
@@ -264,5 +260,10 @@ def _env_override[T](
     return cast(raw_env) if raw_env is not None else value
 
 
-def is_pcf_spec(entry: GpuSpec) -> TypeGuard[PcfGpuSpec]:
-    return "pcf_carbon_per_gpu" in entry
+def gpu_direct_carbon(entry: GpuSpec) -> float | None:
+    """Per-GPU carbon from a PCF or LCA figure, else None to estimate it."""
+    if "pcf_carbon_per_gpu" in entry:
+        return cast(PcfGpuSpec, entry)["pcf_carbon_per_gpu"]
+    if "lca_carbon_per_gpu" in entry:
+        return cast(LcaGpuSpec, entry)["lca_carbon_per_gpu"]
+    return None

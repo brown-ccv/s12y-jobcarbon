@@ -12,7 +12,6 @@ from .embodied import node_embodied
 from .engine import PrometheusEngine
 from .generator import generate_manifest
 from .loader import probe_node, process_job
-from .utils import output_text
 from .validate import find_problems
 from .yamldump import dump
 
@@ -29,7 +28,10 @@ def _run_job(
     node_data = process_job(engine, jobid, config)
     manifest = generate_manifest(jobid, node_data, config)
     content = dump(manifest)
-    output_text(content, output)
+    if output:
+        output.write_text(content)
+    else:
+        print(content, end="")
 
 
 @app.command()
@@ -139,7 +141,7 @@ def embodied(
         f"total\t{sockets:.0f}\t{mem:.0f}\t{gpus:.0f}"
         f"\t{cpu:.0f}\t{dram:.0f}\t{gpu:.0f}\t{total:.0f}"
     )
-    output_text("\n".join(rows) + "\n", None)
+    print("\n".join(rows))
 
 
 @app.command(name="validate-config")

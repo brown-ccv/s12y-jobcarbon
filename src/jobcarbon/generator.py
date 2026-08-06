@@ -7,7 +7,7 @@ from importlib import resources
 
 from .config import (
     Config,
-    is_pcf_spec,
+    gpu_direct_carbon,
 )
 from .embodied import cpu_embodied_inputs, gpu_embodied_inputs
 from .models import NodeData
@@ -81,9 +81,9 @@ EMBODIED_STEPS_SERVER_ONLY = [
     "sum-carbon",
 ]
 
-EMBODIED_STEPS_GPU_PCF = [
+EMBODIED_STEPS_GPU_DIRECT = [
     *EMBODIED_STEPS_CPU_DRAM,
-    "gpu-embodied-pcf",
+    "gpu-embodied-direct",
     "gpu-embodied-per-second",
     "gpu-embodied-time-scale",
     "sum-embodied-gpu",
@@ -137,8 +137,8 @@ def _embodied_steps(node_data: NodeData, config: Config) -> list[str]:
         raise ValueError(
             f"node '{node_data.node}' has a GPU profile but is not in gpu_config"
         )
-    if is_pcf_spec(entry):
-        return EMBODIED_STEPS_GPU_PCF
+    if gpu_direct_carbon(entry) is not None:
+        return EMBODIED_STEPS_GPU_DIRECT
     return EMBODIED_STEPS_GPU_ESTIMATED
 
 

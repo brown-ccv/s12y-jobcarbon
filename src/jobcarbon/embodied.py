@@ -4,7 +4,7 @@ from typing import Any, cast
 from .config import (
     Config,
     EstimatedGpuSpec,
-    is_pcf_spec,
+    gpu_direct_carbon,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,10 +36,11 @@ def gpu_embodied_inputs(node: str, gpu_count: int, config: Config) -> Inputs:
     if entry is None:
         raise ValueError(f"node '{node}' has a GPU profile but is not in gpu_config")
 
-    if is_pcf_spec(entry):
+    direct = gpu_direct_carbon(entry)
+    if direct is not None:
         return {
             "gpu_count": gpu_count,
-            "pcf_carbon_per_gpu": entry["pcf_carbon_per_gpu"],
+            "embodied_carbon_per_gpu": direct,
         }
 
     estimated = cast(EstimatedGpuSpec, entry)
@@ -87,8 +88,8 @@ def node_embodied(
     g = gpu_embodied_inputs(node, gpu_count, config)
     if not g:
         gpu = 0.0
-    elif "pcf_carbon_per_gpu" in g:
-        gpu = g["pcf_carbon_per_gpu"] * gpu_count
+    elif "embodied_carbon_per_gpu" in g:
+        gpu = g["embodied_carbon_per_gpu"] * gpu_count
     else:
         per_gpu = (
             g["die_area_sq_cm"] * g["process_scalar_carbon_per_sq_cm"]

@@ -46,7 +46,6 @@ def align(node_data: NodeData, step_seconds: int) -> list[Observation]:
             duration=int(row["duration"]),
             cpu_power=row.get("cpu_power"),
             dram_power=row.get("dram_power"),
-            host_power=row.get("host_power"),
             gpu_power=row.get("gpu_power"),
             grid_carbon_intensity=row.get("grid_carbon_intensity"),
         )

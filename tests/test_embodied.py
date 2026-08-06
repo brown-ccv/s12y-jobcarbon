@@ -16,6 +16,7 @@ from jobcarbon.embodied import node_embodied
 
 _CPU_DIE = 6.94
 _PCF_ENTRY = {"gpu_model": "Test PCF", "pcf_carbon_per_gpu": 150000.0}
+_LCA_ENTRY = {"gpu_model": "Test LCA", "lca_carbon_per_gpu": 127600.0}
 _ESTIMATED_ENTRY = {
     "gpu_model": "Test EST",
     "die_area_sq_cm": 8.15,
@@ -68,6 +69,14 @@ def test_pcf_gpu():
         "node1", socket_count=2, mem_total=512, gpu_count=4, config=_cfg(_PCF_ENTRY)
     )
     assert r["gpu"] == pytest.approx(150000.0 * 4)
+    assert r["total"] == pytest.approx(r["cpu"] + r["dram"] + r["gpu"])
+
+
+def test_lca_gpu():
+    r = node_embodied(
+        "node1", socket_count=2, mem_total=512, gpu_count=4, config=_cfg(_LCA_ENTRY)
+    )
+    assert r["gpu"] == pytest.approx(127600.0 * 4)
     assert r["total"] == pytest.approx(r["cpu"] + r["dram"] + r["gpu"])
 
 

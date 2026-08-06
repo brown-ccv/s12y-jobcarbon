@@ -2,6 +2,6 @@ path: builtin
 method: Multiply
 config:
   input-parameters:
-    - pcf_carbon_per_gpu
+    - embodied_carbon_per_gpu
     - gpu_count
   output-parameter: gpu_embodied_carbon_node

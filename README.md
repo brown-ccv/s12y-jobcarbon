@@ -1,85 +1,46 @@
 # Job Carbon
 
-`jobcarbon` estimates the carbon footprint of OSCAR Slurm jobs. It queries Prometheus for power telemetry (Scaphandre CPU/DRAM, NVIDIA GPU) and job resource allocation data, then produces a complete [Impact Framework](https://if.greensoftware.foundation/) manifest ready to be evaluated by `if-run`
+`jobcarbon` estimates the carbon footprint of Slurm jobs. It queries Prometheus for power telemetry (Scaphandre CPU/DRAM, NVIDIA GPU) and job resource allocation, then produces an [Impact Framework](https://if.greensoftware.foundation/) manifest ready to be evaluated by `if-run`. Both operational carbon (from energy use) and embodied carbon (from hardware manufacture) are computed per node and summed.
 
-## Prerequisites
-
-`jobcarbon` uses `uv` to manage dependencies. To install `uv` refer to the [`uv` documentation](https://docs.astral.sh/uv/), or run:
+## Commands
 
 ```sh
-pip install uv
+jobcarbon manifest JOB_ID [--embodied] [--output FILE]    # one job → IF manifest (stdout by default)
+jobcarbon batch JOB_ID... [--embodied] [--output-dir DIR] # many jobs → one job<ID>.yaml each
+jobcarbon embodied HOSTLIST...                            # embodied carbon of node hardware, no job needed
+jobcarbon validate-config                                 # check the resolved config loads (offline)
 ```
 
-A Prometheus instance must be reachable. By default `jobcarbon` connects to `http://localhost:9390`. Override this with the `JOBCARBON_PROMETHEUS_URL` environment variable:
+Job time windows and nodes are discovered automatically from Prometheus cgroup data — no timestamps needed. Hostlists accept Slurm syntax (`gpu[4001-4008]`).
 
 ```sh
-export JOBCARBON_PROMETHEUS_URL=http://localhost:9390
-```
-
-Two other optional environment variables control query behaviour:
-
-| Variable | Default | Description |
-|---|---|---|
-| `JOBCARBON_STEP_SECONDS` | `60` | Time-series resolution in seconds |
-| `JOBCARBON_LOOKBACK_DAYS` | `30` | How far back to search for a job's data |
-
-## Running
-
-Pass a Slurm job ID. The tool discovers the job's time window and nodes automatically from Prometheus cgroup data — no start/end timestamps are required
-
-```sh
-uv run python src/jobcarbon.py $JOB_ID
-```
-
-The output is a complete Impact Framework manifest printed to stdout. Redirect it to a file and pass it to `if-run`
-
-```sh
-uv run python src/jobcarbon.py $JOB_ID > manifest.yaml
+jobcarbon manifest 4690148 --embodied > manifest.yaml
 if-run -m manifest.yaml -o output
 ```
 
-### Example
+## Configuration
+
+A `config.toml` (hardware inventory + settings) must be found in one of, in order: `$JOBCARBON_CONFIG`, `$XDG_CONFIG_HOME/jobcarbon/config.toml`, the package, or `/etc/jobcarbon/config.toml`. Any value can be overridden by a `JOBCARBON_<KEY>` env var:
+
+| Variable                   | Default                 | Description                             |
+| -------------------------- | ----------------------- | --------------------------------------- |
+| `JOBCARBON_PROMETHEUS_URL` | `http://localhost:9390` | Prometheus base URL                     |
+| `JOBCARBON_STEP_SECONDS`   | `60`                    | Time-series resolution in seconds       |
+| `JOBCARBON_LOOKBACK_DAYS`  | `30`                    | How far back to search for a job's data |
+
+See `METHODOLOGY.md` for the carbon model and `docs/die-areas.md` for hardware sources.
+
+## Development
+
+Requires Python ≥ 3.12 and [`uv`](https://docs.astral.sh/uv/) (`pip install uv`).
 
 ```sh
-$ uv run python src/jobcarbon.py 1667979 > manifest.yaml
-$ if-run -m manifest.yaml -o output
-$ head output.yaml
-aggregation:
-  metrics:
-    - duration
-    - energy
-    - carbon_operational
-    - carbon_embodied
-    - carbon
-  type: both
-...
-tree:
-  children:
-    node1648:
-      aggregated:
-        carbon_operational: 2650.032
-        carbon_embodied: 2532.548
-        carbon: 5182.580
-      ...
+git clone <repo> && cd s12y-jobcarbon
+uv sync              # install deps into a local venv
+JOBCARBON_CONFIG=config/config.toml uv run jobcarbon validate-config
+
+uv run pytest        # tests
+uv run ruff check    # lint
+uv run ruff format   # format
+uv run pyright       # typecheck
 ```
-
-The manifest contains one child per compute node. Each node's pipeline is selected automatically based on available telemetry:
-
-| Profile | Condition | Pipeline |
-|---|---|---|
-| `full` | Scaphandre CPU + DRAM data present | CPU + DRAM power to carbon |
-| `full_gpu` | Scaphandre CPU + DRAM + GPU data present | CPU + DRAM + GPU power to carbon |
-| `host_only` | Only whole-host Scaphandre power available | Host power scaled by reservation share to carbon |
-| `host_only_gpu` | Whole-host power + GPU data | Host power (scaled) + GPU power to carbon |
-
-Carbon is reported in gCO2eq using a grid carbon intensity of **381 gCO2eq/kWh** (Rhode Island grid average). Both operational carbon (from energy use) and embodied carbon (from hardware manufacture, via `SciEmbodied`) are computed and summed
-
-## Batch mode
-
-`batch` generates manifests for a list of job IDs read from a plain text file (one ID per line) and writes one `.yml` file per job into an output directory:
-
-```sh
-uv run python src/batch.py jobs.txt output/
-```
-
-Jobs that fail (e.g. no Prometheus data found within the lookback window) are reported and skipped; processing continues for the remaining jobs
