@@ -1,5 +1,6 @@
 from itertools import chain
 
+import bcrypt
 import requests
 
 from .config import Config
@@ -10,6 +11,8 @@ from .registry import MetricDefinition
 class PrometheusEngine:
     def __init__(self, config: Config) -> None:
         self.base_url = config.prometheus_url.rstrip("/")
+        self.username = config.prometheus_username
+        self.password = config.prometheus_password
         self.step_seconds = config.step_seconds
         self.max_samples = config.max_samples
 
@@ -29,6 +32,7 @@ class PrometheusEngine:
     ) -> PromResult:
         """Range query for jobs shorter than the max sample count."""
         query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
+        auth = (self.username, self.password) if self.username else None
         response = requests.get(
             f"{self.base_url}/api/v1/query_range",
             params={
@@ -37,6 +41,7 @@ class PrometheusEngine:
                 "end": window.end,
                 "step": f"{self.step_seconds}s",
             },
+            auth=auth,
         )
         return self._parse_response(response)
 
@@ -81,9 +86,11 @@ class PrometheusEngine:
     ) -> PromResult:
         """Instant query at a Unix timestamp, or now if time is None."""
         query = metric.query.format(node=node, jobid=jobid, step=self.step_seconds)
+        auth = (self.username, self.password) if self.username else None
         response = requests.get(
             f"{self.base_url}/api/v1/query",
             params={"query": query, "time": time},
+            auth=auth
         )
         return self._parse_response(response)
 
@@ -96,8 +103,10 @@ class PrometheusEngine:
     ) -> PromResult:
         """Lookback query, find metric in the last n days."""
         query = f"{metric.query.format(node=node, jobid=jobid, step=self.step_seconds)}[{lookback_days}d]"
+        auth = (self.username, self.password) if self.username else None
         response = requests.get(
             f"{self.base_url}/api/v1/query",
             params={"query": query},
+            auth=auth
         )
         return self._parse_response(response)

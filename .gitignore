@@ -10,3 +10,4 @@ output*.yaml
 .jj/
 .venv/
 papers/
+embodied.txt

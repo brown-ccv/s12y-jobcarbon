@@ -1,3 +1,4 @@
+import bcrypt
 import os
 import tomllib
 from collections.abc import Callable
@@ -85,6 +86,8 @@ class Config:
     cpu_lifespan_seconds: int
     gpu_lifespan_seconds: int
     prometheus_url: str
+    prometheus_username: str
+    prometheus_password: str
     step_seconds: int
     lookback_days: int
     max_samples: int
@@ -109,6 +112,8 @@ class Config:
         JOBCARBON_CPU_LIFESPAN_YEARS    - server amortisation period
         JOBCARBON_GPU_LIFESPAN_YEARS    - GPU amortisation period
         JOBCARBON_PROMETHEUS_URL        - Prometheus base URL
+        JOBCARBON_PROMETHEUS_USERNAME   - Prometheus base username
+        JOBCARBON_PROMETHEUS_PASSWORD   - Prometheus base password
         JOBCARBON_STEP_SECONDS          - scrape resolution in seconds
         JOBCARBON_LOOKBACK_DAYS         - range for job/node discovery
         JOBCARBON_MAX_SAMPLES           - max samples per Prometheus query chunk
@@ -135,6 +140,8 @@ class Config:
         prometheus_url = _env_override(
             raw, "prometheus_url", str, DEFAULT_PROMETHEUS_URL
         )
+        prometheus_username = raw.get("prometheus_username", "")
+        prometheus_password = raw.get("prometheus_password", "")
         step_seconds = _env_override(raw, "step_seconds", int, DEFAULT_STEP_SECONDS)
         lookback_days = _env_override(raw, "lookback_days", int, DEFAULT_LOOKBACK_DAYS)
         max_samples = _env_override(raw, "max_samples", int, DEFAULT_MAX_SAMPLES)
@@ -146,6 +153,8 @@ class Config:
             cpu_lifespan_seconds=_years_to_seconds(cpu_years),
             gpu_lifespan_seconds=_years_to_seconds(gpu_years),
             prometheus_url=prometheus_url,
+            prometheus_username=prometheus_username,
+            prometheus_password=prometheus_password,
             step_seconds=step_seconds,
             lookback_days=lookback_days,
             max_samples=max_samples,
